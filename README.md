@@ -16,6 +16,8 @@
 
 ## 环境
 
+Linux 服务器 Docker 部署见 [部署说明](docs/DEPLOYMENT.md)；Windows 安装如下。
+
 Windows + Python **3.12**（含 Python Launcher `py`），可用的 buddyproxy，以及已登录机器人 QQ 的 NapCat。
 
 当前固定超级管理员为 `1574938194`，定义在 [`qqbot/config.py`](qqbot/config.py)。部署到其他账号前请修改该常量。机器人 QQ 应与管理员 QQ 不同。
@@ -139,3 +141,5 @@ tests/                  自动测试和OneBot集成测试
 docs/OPERATIONS.md      详细配置、运行语义与排错
 .env.example            不含真实密钥的配置模板
 ```
+
+管理员私聊发送 **签到**，调用 buddyproxy 当前站点账号池签到并返回脱敏汇总。`BUDDY_SITE` 默认为 `global`，国内站设为 `cn`；`BUDDY_ADMIN_PASSWORD` 对应代理管理密码。国际站通常没有签到活动，返回不支持属于正常结果。

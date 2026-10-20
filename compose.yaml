@@ -1,0 +1,21 @@
+services:
+  bot:
+    build: .
+    image: xiaoai-qqbot:local
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    environment:
+      HOST: 127.0.0.1
+      PORT: "8080"
+      DB_PATH: /app/data/buddy.sqlite3
+      TASK_WORKSPACE: /app/data/tasks
+      TTS_BACKEND: edge
+    volumes:
+      - ./data:/app/data
+      - ${PROXY_ENV_PATH:-/root/.codebuddy/proxy.env}:/root/.codebuddy/proxy.env:ro
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

@@ -8,6 +8,7 @@ from .llm import ModelError
 from .emotion import advance, decay, describe, hint
 from .profile import PROFILE_HELP
 from .media import MEDIA_HELP
+from .checkin import checkin
 
 HELP = "/help 或 /帮助\n/status 或 /状态\n/compress 或 /压缩\n/reset 或 /清空\n/emotion 或 /情绪\n/memory status\n/memory sync\n/memory clear" + MEDIA_HELP
 ADMIN_HELP = "\n/whitelist list\n/whitelist add QQ号\n/whitelist remove QQ号\n/prompt show\n/prompt set 内容（支持多行）\n/prompt reset" + PROFILE_HELP
@@ -74,6 +75,10 @@ class Service:
             if not self.store.allowed(uid):
                 return None
             try:
+                if text.strip() == '签到' and prepare is None:
+                    if uid != ADMIN:
+                        return '只有超级管理员可以使用此命令。'
+                    return await checkin(self.config)
                 if text.lstrip().startswith("/"):
                     return await self.command(uid, text.strip(), bot_id=str(self_id or ''))
                 if not text.strip() and prepare is None:
@@ -125,7 +130,7 @@ class Service:
             name = {'/任务': '/task', '/提醒': '/remind', '/工具': '/tools'}.get(cmd, cmd)
             return await self.tasks.command(uid, name, args, bot_id=bot_id)
         if cmd in ("/help", "/帮助"):
-            return HELP + ('\n/task、/任务：任务与定时执行\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP if uid == ADMIN else "")
+            return HELP + ('\n/task、/任务：任务与定时执行\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP + '\n签到：buddyproxy 账号池签到' if uid == ADMIN else "")
         if cmd in ("/status", "/状态"):
             return (f"模型：{self.config.model}\n历史：{len(self.store.history(uid))} 轮\n"
                     f"摘要：{'有' if self.store.summary(uid) else '无'}\n"

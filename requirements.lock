@@ -48,6 +48,6 @@ typing_extensions==4.16.0
 uvicorn==0.54.0
 watchfiles==1.3.0
 websockets==16.1.1
-win32_setctime==1.2.0
+win32_setctime==1.2.0; sys_platform == 'win32'
 # Editable install with no version control (xiaonuan-qqbot==0.1.0)
 yarl==1.25.1

@@ -10,6 +10,8 @@ DEFAULT_PROMPT = """你是小暖，一位温柔、自然、亲密的 AI 陪伴�
 
 @dataclass(frozen=True)
 class Settings:
+    buddy_admin_password: str = ""
+    buddy_site: str = "global"
     db_path: str = "data/buddy.sqlite3"
     base_url: str = "http://127.0.0.1:32126/v1"
     model: str = "deepseek-v4.1-flash"
@@ -55,6 +57,8 @@ class Settings:
     tts_max_chars: int = 500
 
     def __post_init__(self):
+        if self.buddy_site not in ('global', 'cn'):
+            raise ValueError('BUDDY_SITE 必须为 global 或 cn')
         for name in ("timeout", "compress_rounds", "keep_rounds", "context_tokens", "max_input_tokens", "max_reply_tokens", "summary_tokens", "message_chars", "memory_timeout", "memory_top_k", "memory_chars", "task_poll_seconds", "task_concurrency", "task_max_steps", "task_max_per_user", "task_tool_timeout", "task_run_timeout", "task_result_chars"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} 必须大于 0")
@@ -88,6 +92,8 @@ class Settings:
                or os.getenv("CODEBUDDY_PROXY_API_KEY") or local.get("LLM_API_KEY")
                or proxy.get("CODEBUDDY_PROXY_API_KEY") or proxy.get("OPENAI_API_KEY") or "")
         return cls(
+            buddy_admin_password=value('BUDDY_ADMIN_PASSWORD', os.getenv('CODEBUDDY_PROXY_ADMIN_PASSWORD') or proxy.get('CODEBUDDY_PROXY_ADMIN_PASSWORD') or ''),
+            buddy_site=value('BUDDY_SITE', 'global'),
             db_path=value("DB_PATH", "data/buddy.sqlite3"),
             base_url=value("LLM_BASE_URL", cls.base_url), model=value("LLM_MODEL", cls.model),
             api_key=key, timeout=float(value("LLM_TIMEOUT", "90")),
