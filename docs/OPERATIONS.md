@@ -132,6 +132,7 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 /remind in 10m 喝水
 /remind daily 23:00 准备休息
 /task list
+/task list all
 /task show 任务ID
 /task steps 任务ID
 /task runs 任务ID
@@ -271,3 +272,5 @@ token 均为**估算值**：非 ASCII 每字符约 1.5 token、ASCII 每四字�
 - **压缩失败**：原数据保留，用 `/compress` 重试；检查代理可用性、摘要输出额度。超预算则缩短人设/输入，或用 `/reset` 清空自己的记忆。
 
 项目结构：`bot.py` 为入口，`qqbot/plugin.py` 负责 OneBot 收发，`service.py` 负责权限和上下文，`store.py` 负责 SQLite，`llm.py` 负责代理调用，`memory.py` 负责外部记忆与持久待办，`emotion.py` 负责本地情感状态；测试位于 `tests/`。
+
+`/task list` 只显示待执行、执行中、暂停和等待补充信息的任务；`/task list all` 包含保留的已结束历史。调度器每分钟自动清理结束满 7 天的成功、失败、取消任务及其执行、步骤和审计记录。尚未投递的通知会保留，循环任务和逾期待执行任务不按到期时间删除。生成文件和独立笔记保留。取消任务会停止旧通知重试。

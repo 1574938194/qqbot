@@ -55,8 +55,32 @@ class TaskStore:
         rows = self.rows('SELECT * FROM tasks WHERE uid=? AND id=?', (uid, task_id))
         return rows[0] if rows else None
 
-    def list(self, uid, limit=30):
-        return self.rows('SELECT * FROM tasks WHERE uid=? ORDER BY created_at DESC LIMIT ?', (uid, limit))
+    def list(self, uid, limit=30, *, include_finished=False):
+        condition = '' if include_finished else " AND state IN ('scheduled','running','paused','waiting_input')"
+        return self.rows('SELECT * FROM tasks WHERE uid=?' + condition + ' ORDER BY created_at DESC LIMIT ?', (uid, limit))
+
+    def prune(self, before, *, uid=None, task_ids=None):
+        """事务清理终态任务及审计；待投递通知和可恢复执行不删除。"""
+        condition = "t.state IN ('succeeded','failed','cancelled') AND t.updated_at<=?"
+        args = [before]
+        if uid is not None:
+            condition += ' AND t.uid=?'
+            args.append(uid)
+        if task_ids is not None:
+            if not task_ids:
+                return 0
+            condition += ' AND t.id IN (' + ','.join('?' for _ in task_ids) + ')'
+            args.extend(task_ids)
+        condition += """ AND NOT EXISTS (SELECT 1 FROM task_runs r WHERE r.task_id=t.id AND
+          (r.state IN ('running','queued') OR (r.notified=0 AND r.state IN ('succeeded','failed','paused','waiting_input'))))"""
+        with self.db:
+            ids = [r['id'] for r in self.rows('SELECT t.id FROM tasks t WHERE ' + condition, args)]
+            for task_id in ids:
+                for table in ('task_steps', 'task_events'):
+                    self.db.execute(f'DELETE FROM {table} WHERE run_id IN (SELECT id FROM task_runs WHERE task_id=?)', (task_id,))
+                self.db.execute('DELETE FROM task_runs WHERE task_id=?', (task_id,))
+                self.db.execute('DELETE FROM tasks WHERE id=?', (task_id,))
+        return len(ids)
 
     def count_active(self, uid):
         return self.db.execute("SELECT COUNT(*) FROM tasks WHERE uid=? AND state IN ('scheduled','running','paused','waiting_input')", (uid,)).fetchone()[0]
@@ -141,6 +165,8 @@ class TaskStore:
             state = 'cancelled' if action == 'cancel' else 'paused'
             with self.db:
                 self.db.execute('UPDATE tasks SET state=?,updated_at=? WHERE id=?', (state, time.time(), task_id))
+                if action == 'cancel':
+                    self.db.execute('UPDATE task_runs SET notified=1 WHERE task_id=?', (task_id,))
                 if run and run['state'] in ('running', 'queued'):
                     self.db.execute('UPDATE task_runs SET state=?,updated_at=? WHERE id=?', (state, time.time(), run['id']))
         elif action in ('resume', 'retry'):

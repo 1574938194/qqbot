@@ -18,6 +18,7 @@ TASK_HELP = '''/task run 任务内容
 /task daily 08:00 任务内容
 /remind in 10m 提醒内容（也支持 at/every/daily）
 /task list
+/task list all（最近 7 天历史）
 /task show 任务ID
 /task steps 任务ID
 /task runs 任务ID
@@ -34,7 +35,7 @@ CONTROL_TOOLS = [
         'kind': {'type': 'string', 'enum': ['agent', 'reminder']},
         'mode': {'type': 'string', 'enum': ['now', 'in', 'at', 'every', 'daily']},
         'when': string('now用空字符串；in/every用10m等时长；at用ISO日期；daily用08:00，北京时间')}, ['instruction', 'kind', 'mode', 'when']),
-    function('task_list', '查询当前用户自己的任务列表及状态。'),
+    function('task_list', '查询当前用户自己的待处理任务列表及状态，不包含已结束任务。'),
     function('task_get', '查询当前用户自己的任务详情、最近进度和最终结果。', {'task_id': string('任务ID')}, ['task_id']),
     function('task_control', '按用户明确要求取消、暂停、恢复或重试自己的任务。', {
         'task_id': string('任务ID'), 'action': {'type': 'string', 'enum': ['cancel', 'pause', 'resume', 'retry']}}, ['task_id', 'action']),
@@ -58,6 +59,7 @@ class Tasks:
         self.delivery_task = None
         self.stopping = False
         self.notification_retry = {}
+        self.next_cleanup = 0
 
     def create(self, uid, instruction, *, kind='agent', mode='now', when='', bot_id=''):
         from .service import estimate
@@ -115,7 +117,10 @@ class Tasks:
             parts = args.split(maxsplit=1)
             action, rest = (parts + [''])[:2] if parts else ('', '')
             if action == 'list':
-                return '\n\n'.join(self.brief(t) for t in self.repo.list(uid)) or '你还没有任务。'
+                if rest.strip() not in ('', 'all'):
+                    return '格式：/task list 或 /task list all。'
+                self.cleanup()
+                return '\n\n'.join(self.brief(t) for t in self.repo.list(uid, include_finished=rest.strip() == 'all')) or '当前没有任务。'
             if action in ('show', 'steps'):
                 return self.details(uid, rest.strip(), steps=action == 'steps')
             if action in ('runs', 'files', 'file'):
@@ -350,7 +355,15 @@ class Tasks:
                 logging.getLogger(__name__).warning('task notification failure: %s', type(exc).__name__)
                 self.notification_retry[run['id']] = time.time() + 30
 
+    def cleanup(self):
+        now = time.time()
+        if now >= self.next_cleanup:
+            self.repo.prune(now - 7 * 86400)
+            self.next_cleanup = now + 60
+            self.notification_retry = {run_id: due for run_id, due in self.notification_retry.items() if self.repo.run(run_id)}
+
     async def tick(self, *, notify=True):
+        self.cleanup()
         for task_id, (uid, worker) in list(self.running.items()):
             if not self.store.allowed(uid):
                 self.revoke(uid)
