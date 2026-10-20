@@ -143,7 +143,8 @@ class LLM:
             choice = response.choices[0] if response.choices else None
             content = choice.message.content if choice else None
             calls = []
-            for call in (choice.message.tool_calls if choice else None) or []:
+            # 未显式提供工具时，不解析或执行模型自行返回的工具调用。
+            for call in ((choice.message.tool_calls if choice else None) or []) if tools else []:
                 if call.type != 'function' or len(call.function.arguments) > 100000:
                     raise ModelError('模型工具调用格式不正确，请重试。')
                 name, arguments = call.function.name, call.function.arguments

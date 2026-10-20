@@ -120,7 +120,7 @@ async def test_permissions_natural_creation_and_reset(manager):
     assert '只有超级管理员' in await service.handle(123, '/tools shell on')
     t.llm.turns = [ModelTurn('', [tool('task_create', {'instruction': '提醒喝水', 'kind': 'reminder', 'mode': 'in', 'when': '10m'})]),
                    ModelTurn('已安排，10分钟后提醒你。', [])]
-    reply = await service.handle(123, '10分钟后提醒我喝水', self_id=99999)
+    reply = await service.handle(123, '/tool 10分钟后提醒我喝水', self_id=99999)
     assert '已安排' in reply
     task = t.repo.list(123)[0]
     assert task['bot_id'] == '99999'

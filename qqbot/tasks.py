@@ -11,11 +11,12 @@ from .scheduling import display_time, schedule
 from .task_store import TaskStore
 from .task_tools import SIDE_EFFECTS, ToolError, Tools, function, string
 
-TASK_HELP = '''/task run 任务内容
-/task in 10m 任务内容
-/task at 2026-10-21T08:00 任务内容
-/task every 1h 任务内容
-/task daily 08:00 任务内容
+TASK_HELP = '''/tool 任务内容（显式启用工具；普通聊天不调用工具）
+/tool /task run 任务内容
+/tool /task in 10m 任务内容
+/tool /task at 2026-10-21T08:00 任务内容
+/tool /task every 1h 任务内容
+/tool /task daily 08:00 任务内容
 /remind in 10m 提醒内容（也支持 at/every/daily）
 /task list
 /task list all（最近 7 天历史）
@@ -24,8 +25,9 @@ TASK_HELP = '''/task run 任务内容
 /task runs 任务ID
 /task files 任务ID
 /task file 任务ID 相对路径
-/task cancel|pause|resume|retry 任务ID
-/task reply 任务ID 回答内容
+/task cancel|pause 任务ID
+/tool /task resume|retry 任务ID
+/tool /task reply 任务ID 回答内容
 /tools
 /tools shell on|off（仅管理员）'''
 
@@ -162,7 +164,7 @@ class Tasks:
             return '任务文件读取失败，请检查文件是否存在。'
 
     async def chat(self, uid, messages, *, bot_id=''):
-        """陪伴聊天只暴露任务控制和轻量工具；复杂执行移入持久任务。"""
+        """仅供显式 /tool 请求；复杂执行移入持久任务。"""
         schemas = self.chat_schemas(uid)
         messages = self.chat_messages(messages)
         mutated = False

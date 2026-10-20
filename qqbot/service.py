@@ -35,7 +35,7 @@ class Service:
         self.locks = defaultdict(asyncio.Lock)
 
     def input_tokens(self, uid, messages):
-        return self.tasks.chat_budget(uid, messages) if self.tasks else tokens(messages)
+        return tokens(messages)
 
     def messages(self, uid, text=None, *, memories=None, emotion=None):
         result = [{"role": "system", "content": self.store.model_prompt()}]
@@ -114,7 +114,8 @@ class Service:
                     return "当前上下文仍超出估算预算，请缩短输入，或使用 /reset 开始新对话。"
                 if not self.store.allowed(uid):
                     return None
-                reply = await self.tasks.chat(uid, messages, bot_id=str(self_id or '')) if self.tasks else await self.llm.complete(messages)
+                # 普通文本及图片陪伴只请求最终正文；不提供任何工具或JSON工具协议。
+                reply = await self.llm.complete(messages)
                 # 撤销权限期间的在途请求也不再写入或发送。
                 if not self.store.allowed(uid):
                     return None
@@ -131,6 +132,17 @@ class Service:
     async def command(self, uid, text, *, bot_id=''):
         parts = text.split(maxsplit=1)
         cmd, args = parts[0].lower(), parts[1] if len(parts) == 2 else ""
+        if cmd == '/tool':
+            if not self.tasks:
+                return '任务模块未启用。'
+            if not args.strip():
+                return '用法：/tool 要执行的任务；或 /tool /task run 任务内容。普通聊天不会调用工具。'
+            if estimate(args) > self.config.max_input_tokens:
+                return '任务内容太长，请缩短后重试。'
+            nested = args.split(maxsplit=1)
+            if nested[0].lower() in ('/task', '/任务'):
+                return await self.tasks.command(uid, '/task', nested[1] if len(nested) > 1 else '', bot_id=bot_id)
+            return await self.tasks.chat(uid, self.messages(uid, args), bot_id=bot_id)
         if cmd == '/pool':
             if uid != ADMIN:
                 return '只有超级管理员可以使用此命令。'
@@ -139,9 +151,12 @@ class Service:
             if not self.tasks:
                 return '任务模块未启用。'
             name = {'/任务': '/task', '/提醒': '/remind', '/工具': '/tools'}.get(cmd, cmd)
+            action = (args.split(maxsplit=1) or [''])[0]
+            if name == '/task' and action in ('run', 'in', 'at', 'every', 'daily', 'resume', 'retry', 'reply'):
+                return '执行工具任务请显式使用 /tool ' + text
             return await self.tasks.command(uid, name, args, bot_id=bot_id)
         if cmd in ("/help", "/帮助"):
-            return HELP + ('\n/task、/任务：任务与定时执行\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP + '\n签到：buddyproxy 当前账号池签到\n/pool：查看号池\n/pool cn|global：切换国内/国际号池' if uid == ADMIN else "")
+            return HELP + ('\n/tool 内容：显式调用工具；其他聊天只对话\n/task、/任务：查看和管理任务\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP + '\n签到：buddyproxy 当前账号池签到\n/pool：查看号池\n/pool cn|global：切换国内/国际号池' if uid == ADMIN else "")
         if cmd in ("/status", "/状态"):
             identity = self.store.identity()
             return (f"模型：{self.config.model}\n"

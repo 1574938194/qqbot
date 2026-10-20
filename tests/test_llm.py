@@ -6,6 +6,26 @@ from qqbot.config import Settings
 from qqbot.llm import LLM, ModelError
 
 
+async def test_plain_dialogue_has_no_tool_protocol_and_ignores_unsolicited_calls():
+    import json
+    def respond(request):
+        body = json.loads(request.content)
+        assert 'tools' not in body and 'tool_choice' not in body
+        assert '结构化JSON协议' not in str(body['messages'])
+        return httpx.Response(200, json={'id': 'plain', 'object': 'chat.completion', 'created': 0, 'model': 'test',
+            'choices': [{'index': 0, 'finish_reason': 'stop', 'message': {
+                'role': 'assistant', 'content': '我在想你今天过得怎么样。', 'reasoning_content': '不发送',
+                'tool_calls': [{'id': 'unexpected', 'type': 'function', 'function': {'name': 'shell', 'arguments': '{'}}]}}]})
+    llm = LLM(Settings(api_key='test-only', llm_tool_mode='json', llm_min_interval=0))
+    await llm.client.close()
+    llm.client = AsyncOpenAI(api_key='test-only', max_retries=0,
+                            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+    try:
+        assert await llm.complete([{'role': 'user', 'content': '你心里在想什么'}]) == '我在想你今天过得怎么样。'
+    finally:
+        await llm.close()
+
+
 @pytest.mark.parametrize('kind', ['success', 'empty', 'auth', 'timeout', 'length'])
 async def test_model_responses(kind, caplog):
     def respond(request):

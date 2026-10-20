@@ -62,6 +62,7 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `/memory status` | 查看当前记忆后端、自己的同步/清理待办与本进程最近错误 |
 | `/memory sync` | 重试自己的记忆同步/删除，单次最多处理 20 项 |
 | `/memory clear` | 隔离并请求删除自己的外部长期记忆，保留本地对话和摘要 |
+| `/tool 内容` | 显式授权本轮调用工具，其他聊天不调用工具 |
 | `/task`、`/任务` | 查看任务、定时执行、查询、控制及成果命令 |
 | `/remind`、`/提醒` | 创建无需模型的定时文本提醒 |
 | `/tools`、`/工具` | 查看可用工具；管理员可显式启用或关闭本机命令 |
@@ -106,7 +107,7 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `MEMORY_TOP_K` | `5` | Mem0 检索结果数 |
 | `MEMORY_CHARS` | `2400` | 本轮检索文本总字符上限，同时为 Letta 记忆块字符上限 |
 | `EMOTION_ENABLED` | `true` | `true`/`1`/`yes` 开启；`false` 关闭情感状态推演与注入 |
-| `TASKS_ENABLED` | `true` | 启用任务命令、自然语言工具调用和后台调度 |
+| `TASKS_ENABLED` | `true` | 启用任务命令、显式 /tool 工具调用和后台调度 |
 | `TASK_WORKSPACE` | `data/tasks` | 任务成果目录，按用户 QQ 和任务 ID 隔离 |
 | `TASK_POLL_SECONDS` | `1` | 调度和通知轮询间隔秒数 |
 | `TASK_CONCURRENCY` | `2` | 总任务并发数，每个用户最多同时执行 1 个 |
@@ -121,14 +122,14 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 
 任务模块是机器人自身的服务，运行在 NoneBot 进程内，不依赖 Codex 聊天或桌面自动化。支持「模型规划 → 工具执行 → 检查结果 → 继续规划」的多步循环，将任务、执行轮次、工具参数和结果、检查点及通知游标保存到 SQLite。它提供类似任务代理的基础执行能力，不包含 OpenClaw 的全部渠道和插件生态。
 
-可以直接私聊：`10分钟后提醒我喝水`、`帮我查找 Python 官方安装说明，整理步骤并保存报告`、`查一下我刚才任务的进度`。模型会调用工具创建或查询真实任务；确定性命令可绕过模型理解，格式如下：
+只有 `/tool 内容` 才启用模型工具协议。普通文字和图片回复走纯对话接口，不提供工具、不要求JSON，也不把聊天理解为任务。可以发送 `/tool 10分钟后提醒我喝水`、`/tool 帮我查找 Python 官方安装说明，整理步骤并保存报告`。`/task list` 等管理命令和 `/remind` 保持可用；创建、恢复和重试工具任务需要显式前缀，格式如下：
 
 ```text
-/task run 计算(17+25)*3，将结果保存为result.txt并读取确认
-/task in 10m 查找我关注主题的新资料并给出来源
-/task at 2026-10-21T08:00 整理今天的待办建议
-/task every 1h 查询指定公开网页的变化并报告
-/task daily 08:00 根据我的任务笔记整理今日计划
+/tool /task run 计算(17+25)*3，将结果保存为result.txt并读取确认
+/tool /task in 10m 查找我关注主题的新资料并给出来源
+/tool /task at 2026-10-21T08:00 整理今天的待办建议
+/tool /task every 1h 查询指定公开网页的变化并报告
+/tool /task daily 08:00 根据我的任务笔记整理今日计划
 /remind in 10m 喝水
 /remind daily 23:00 准备休息
 /task list
@@ -139,10 +140,10 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 /task files 任务ID
 /task file 任务ID result.txt
 /task pause 任务ID
-/task resume 任务ID
+/tool /task resume 任务ID
 /task cancel 任务ID
-/task retry 任务ID
-/task reply 任务ID 补充信息
+/tool /task retry 任务ID
+/tool /task reply 任务ID 补充信息
 ```
 
 `at` 使用 ISO 日期时间；无时区时按 **Asia/Shanghai（UTC+8）**，如需空格日期请改用 `T`。`in/every` 使用 `30s`、`10m`、`2h`、`1d`；固定间隔至少 60 秒。所有显示时间明确为北京时间。每日任务按该时区运行，不依赖 Windows 系统时区。停机错过的任务启动后补执行一次，周期任务跳过积压时段，不连续补发所有错过的轮次；单个周期任务不会重叠执行。
@@ -251,7 +252,7 @@ token 均为**估算值**：非 ASCII 每字符约 1.5 token、ASCII 每四字�
 .\.venv\Scripts\python.exe -m pytest -q
 # 显式向本机代理发起真实聊天和摘要，不连接 QQ，不写正式数据库
 .\.venv\Scripts\python.exe -m scripts.verify_proxy
-# 真实模型多步工具调用、文件成果、笔记、任务状态及自然语言定时创建
+# 真实模型多步工具调用、文件成果、笔记、任务状态及 /tool 显式定时创建
 .\.venv\Scripts\python.exe -m scripts.verify_tasks
 # 真实公开网页读取及搜索，不连接 QQ
 .\.venv\Scripts\python.exe -m scripts.verify_web

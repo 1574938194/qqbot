@@ -25,6 +25,12 @@ import numpy as np
 import onnx
 import onnxruntime as ort
 from onnxruntime.quantization import quantize_dynamic, QuantType
+sampler_spec = importlib.util.spec_from_file_location('sampler_fix', Path(__file__).with_name('fix-sampler.py'))
+sampler_fix = importlib.util.module_from_spec(sampler_spec)
+sampler_spec.loader.exec_module(sampler_fix)
+half_spec = importlib.util.spec_from_file_location('half_storage', Path(__file__).with_name('fp16-storage.py'))
+half_storage = importlib.util.module_from_spec(half_spec)
+half_spec.loader.exec_module(half_storage)
 
 converter = importlib.import_module('genie_tts.Converter.v2ProPlus.Converter')
 # 保留失败产物和缓存供检查，不调用上游递归删除。
@@ -49,4 +55,6 @@ for stem in ('t2s_first_stage_decoder', 't2s_stage_decoder'):
     quantize_dynamic(str(optimized), str(output / (stem + '.q8.onnx')),
                      weight_type=QuantType.QUInt8, per_channel=True,
                      op_types_to_quantize=['MatMul', 'Gemm', 'Attention'])
+    sampler_fix.fix(output / (stem + '.q8.onnx'))
+    half_storage.convert(original, output / (stem + '.fp16-storage.onnx'))
 print('Export complete; prepare each voice reference before deployment.')

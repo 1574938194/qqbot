@@ -60,7 +60,10 @@ async def tts(request: Speech):
             stream.writeframes((audio * 32767).astype('<i2').tobytes())
         return Response(output.getvalue(), media_type='audio/wav')
     except Exception as exc:
-        diagnostics.write(f'ONNX speech failed: {type(exc).__name__}\n')
+        known = {'semantic output too short', 'semantic generation limit exceeded',
+                 'invalid audio output', 'no pronounceable text', 'invalid text length'}
+        code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else type(exc).__name__
+        diagnostics.write(f'ONNX speech failed: {code}\n')
         diagnostics.flush()
         return JSONResponse({'message': 'speech generation failed'}, status_code=503)
 

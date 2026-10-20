@@ -48,9 +48,14 @@ async def test_reverse_websocket(tmp_path):
                 self.wfile.write(payload)
                 return
             calls.append(body)
+            explicit_tool = body['messages'][-1]['content'] == '显式工具测试'
+            assert ('结构化JSON协议' in str(body['messages'])) == explicit_tool
+            assert 'tools' not in body and 'tool_choice' not in body
             final = '[CQ:at,qq=123]最终正文' * 3
             if any(isinstance(m['content'], list) for m in calls[-1]['messages']):
                 final = '图片里有一个蓝色方块。'
+            if explicit_tool:
+                final = json.dumps({'final': '工具处理完成。'}, ensure_ascii=False)
             # 即使请求使用工具协议，普通聊天正文也应直接正常投递。
             payload = json.dumps({'id': 'mock', 'object': 'chat.completion', 'created': 0,
                                   'model': 'mock', 'choices': [{'index': 0, 'finish_reason': 'stop',
@@ -73,6 +78,7 @@ async def test_reverse_websocket(tmp_path):
            # 等待提示由 test_reply_wait 覆盖，此处只检查最终正文分段收发。
            'CHAT_NOTICE_SECONDS': '60', 'CHAT_TIMEOUT': '90',
            'VISION_MODEL': 'vision-test', 'TTS_BACKEND': 'genie', 'TTS_TIMEOUT': '30',
+           'LLM_TOOL_MODE': 'json',
            'TTS_BASE_URL': f'http://127.0.0.1:{server.server_port}'}
     logfile = tmp_path / 'bot.log'
     with logfile.open('w', encoding='utf-8') as output:
@@ -215,6 +221,9 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 5}, 'echo': action['echo']}))
                 assert len(calls) == 4
                 assert speech_calls[-1] == {'text': '[CQ:at,qq=123]最终正文' * 3, 'speaker': 'noto'}
+                await ws.send(event(ADMIN, '/tool 显式工具测试'))
+                assert await receive_segment() == '工具处理完成。'
+                assert len(calls) == 5
         finally:
             process.terminate()
             process.wait(timeout=10)

@@ -72,9 +72,10 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 | `/speaker aoi` / `noto` / `hayami` / `edge` | 悠木碧 / 能登麻美子 / 早见沙织 / 原 Edge 晓晓；选择按用户保存 |
 | `/speaker reset` | 恢复默认音色；不改变文字/语音回复模式 |
 | `/remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
-| `/task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
+| `/tool /task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
+| `/tool 查询资料并整理报告` | 显式启用工具；普通聊天和图片回复不调用工具 |
 | `/task list`、`/task show ID`、`/task steps ID` | 查询任务与执行进度 |
-| `/task pause ID`、`resume ID`、`cancel ID`、`retry ID` | 暂停、检查点恢复、取消或新一轮重试 |
+| `/task pause ID`、`/task cancel ID`；`/tool /task resume ID`、`/tool /task retry ID` | 暂停、取消、显式恢复或重试工具任务 |
 
 仅超级管理员可用：
 
@@ -123,7 +124,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-100项机器人自动测试已通过，另有6项 ONNX 语义边界测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
+104项机器人自动测试已通过，另有14项 ONNX 停顿、语义和采样测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
 
 以下脚本显式调用真实服务，使用测试输入和临时数据库，不向 QQ 发送消息：
 

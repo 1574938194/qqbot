@@ -1,5 +1,6 @@
 """固定 Genie 提交的无 PyTorch 推理适配；模型与参考数据独立挂载。"""
 from __future__ import annotations
+from dataclasses import dataclass
 
 import gc
 import hashlib
@@ -43,6 +44,46 @@ def trim_memory():
             ctypes.CDLL(None).malloc_trim(0)
         except (OSError, AttributeError):
             pass
+
+
+@dataclass(frozen=True)
+class TextToken:
+    text: str
+
+
+@dataclass(frozen=True)
+class PauseToken:
+    seconds: float
+
+
+def speech_tokens(text):
+    """标点成为内部停顿token，不把未训练的占位字符串交给GPT。"""
+    result, pending = [], ''
+    cursor = 0
+    pattern = r'[，,、；;：:。！？!?\n…]+|(?<!\d)\.(?!\d)'
+    for match in re.finditer(pattern, text):
+        mark = match.group()
+        if mark in (':', '：') and match.start() and match.end() < len(text) and text[match.start()-1].isdigit() and text[match.end()].isdigit():
+            continue  # 时间中的冒号交给数字读法归一化，不作为句间停顿。
+        pending += text[cursor:match.start()]
+        cursor = match.end()
+        strong = any(c in mark for c in '。！？!?\n….')
+        duration = .30 if strong else .20 if any(c in mark for c in '；;：:') else .12
+        units = len(re.findall(r'[\u3400-\u9fff0-9]|[A-Za-z]+', pending))
+        if units >= (4 if strong else 6):
+            result.extend([TextToken(pending.strip()), PauseToken(duration)])
+            pending = ''
+        elif pending and pending[-1].isascii() and pending[-1].isalnum():
+            pending += ' '  # 合并短英文片段时保留单词边界。
+    pending += text[cursor:]
+    pending = pending.strip()
+    if re.search(r'\w', pending):
+        if result and len(re.findall(r'[\u3400-\u9fff0-9]|[A-Za-z]+', pending)) < 4:
+            result.pop()  # 将过短尾句并入上一段，避免只生成碎音。
+            previous = result.pop()
+            pending = previous.text + (' ' if previous.text[-1:].isascii() else '') + pending
+        result.extend([TextToken(pending), PauseToken(.30)])
+    return result
 
 
 class TextModels:
@@ -97,6 +138,8 @@ class Engine:
                 with path.open('rb') as stream:
                     if hashlib.file_digest(stream, 'sha256').hexdigest() != expected:
                         raise ValueError('voice asset checksum mismatch')
+            if self.manifest.get('sampler') != 'exponential-v1':
+                raise ValueError('semantic sampler upgrade required')
         self.get_phones, self.generator = load_frontend(Path(source).resolve(), self.assets)
         self.lock = threading.RLock()
         self.active = None
@@ -133,11 +176,14 @@ class Engine:
         self.reference(speaker)
         root = self.assets / speaker
         variant = self.manifest['voices'][speaker].get('decoder_format', 'q8')
-        if variant not in ('q8', 'fp32'):
+        if variant not in ('q8', 'fp32', 'fp16-storage'):
             raise ValueError('invalid decoder format')
-        suffix = '.q8.onnx' if variant == 'q8' else '_fp32.onnx'
+        suffix = {'q8': '.q8.onnx', 'fp32': '_fp32.onnx', 'fp16-storage': '.fp16-storage.onnx'}[variant]
         files = {'encoder': 't2s_encoder_fp32.onnx', 'first': 't2s_first_stage_decoder' + suffix,
                  'step': 't2s_stage_decoder' + suffix}
+        self.decoder_paths = {key: root / files[key] for key in ('first', 'step')}
+        if variant != 'q8':
+            files = {'encoder': files['encoder']}  # 完整精度两阶段分别加载，避免复制两套大权重常驻。
         loaded = {key: load_session(root / name) for key, name in files.items()}
         self.sessions = loaded
         self.active = speaker
@@ -147,6 +193,30 @@ class Engine:
     def synthesize(self, text, speaker):
         if not text.strip() or len(text) > int(os.getenv('MAX_TEXT_CHARS', '200')):
             raise ValueError('invalid text length')
+        plan = speech_tokens(text)
+        if not plan:
+            raise ValueError('no pronounceable text')
+        with self.lock:
+            audio = []
+            try:
+                for token in plan:
+                    if isinstance(token, PauseToken):
+                        audio.append(np.zeros(round(32000 * token.seconds), dtype=np.float32))
+                    else:
+                        audio.append(self.synthesize_segment(token.text, speaker))
+            except ValueError as exc:
+                parts = [token.text for token in plan if isinstance(token, TextToken)]
+                if str(exc) not in ('semantic output too short', 'invalid audio output') or len(parts) < 2:
+                    raise
+                # 某些克隆模型不能稳定朗读独立短片段。丢弃本次所有局部音频，
+                # 合并完整正文用同一音色重试，避免重复前句或漏掉后句。
+                merged = ' '.join(parts)
+                audio = [self.synthesize_segment(merged, speaker), np.zeros(9600, dtype=np.float32)]
+            return np.concatenate(audio)
+
+    def synthesize_segment(self, text, speaker):
+        if not text.strip() or len(text) > int(os.getenv('MAX_TEXT_CHARS', '200')):
+            raise ValueError('invalid text length')
         # 除HTTP队列外，工作线程也持锁；客户端超时不会让旧推理与换模型重叠。
         with self.lock:
             started = time.monotonic()
@@ -154,7 +224,7 @@ class Engine:
             loaded = time.monotonic()
             reference = self.references[speaker]
             try:
-                text_seq, text_bert = self.get_phones('。' + text, language='Chinese')
+                text_seq, text_bert = self.get_phones('。' + text + '。', language='Chinese')
             finally:
                 # 2GB主机避免BERT与声学工作区同时驻留，权重仍可由系统文件缓存复用。
                 sys.modules['genie_tts.ModelManager'].model_manager.release()
@@ -163,7 +233,7 @@ class Engine:
             prepared = time.monotonic()
             # 自回归采样偶尔提前结束。只对过短语义重试，最多三次；不返回参考音频。
             units = len(re.findall(r'[\u3400-\u9fff0-9]|[A-Za-z]+', text))
-            minimum_tokens = max(10, min(100, units * 4))  # v2语义25Hz，按正文长度检查提前结束。
+            minimum_tokens = max(6, min(50, units * 2))  # 仅拦截退化输出；时长不能代替正文完整性校验。
             for attempt in range(3):
                 tokens = self.semantic(reference, text_seq, text_bert)
                 if tokens.shape[-1] >= minimum_tokens:
@@ -179,7 +249,7 @@ class Engine:
                 del vocoder
                 trim_memory()
             audio = np.asarray(audio, dtype=np.float32).reshape(-1)
-            if audio.size < 12800 or not np.isfinite(audio).all() or np.max(np.abs(audio)) < 0.005:
+            if audio.size < 6400 or not np.isfinite(audio).all() or np.max(np.abs(audio)) < 0.005:
                 raise ValueError('invalid audio output')
             self.last_metrics = {'load': loaded - started, 'text': prepared - loaded,
                                  'semantic': generated - prepared, 'vocoder': time.monotonic() - generated}
@@ -190,15 +260,24 @@ class Engine:
         x, prompts = self.sessions['encoder'].run(None, {
             'ref_seq': reference['phones'], 'ref_bert': reference['bert'],
             'text_seq': text_seq, 'text_bert': text_bert, 'ssl_content': reference['ssl_content']})
-        y, embedding, *cache = self.sessions['first'].run(None, {'x': x, 'prompts': prompts})
-        names = [item.name for item in self.sessions['step'].get_inputs()]
-        for _ in range(500):
-            y, embedding, stop, *cache = self.sessions['step'].run(
-                None, dict(zip(names, [y, embedding, *cache])))
-            if stop:
-                break
-        else:
-            raise ValueError('semantic generation limit exceeded')
+        first = self.sessions.get('first') or load_session(self.decoder_paths['first'])
+        try:
+            y, embedding, *cache = first.run(None, {'x': x, 'prompts': prompts})
+        finally:
+            del first
+            if 'first' not in self.sessions: trim_memory()
+        step = self.sessions.get('step') or load_session(self.decoder_paths['step'])
+        try:
+            names = [item.name for item in step.get_inputs()]
+            for _ in range(500):
+                y, embedding, stop, *cache = step.run(None, dict(zip(names, [y, embedding, *cache])))
+                if stop:
+                    break
+            else:
+                raise ValueError('semantic generation limit exceeded')
+        finally:
+            del step
+            if 'step' not in self.sessions: trim_memory()
         tokens = y[:, prompts.shape[-1]:].copy()
         # 最后一个采样位置为停止标记；不把EOS传入声学模型。
         tokens = tokens[:, :-1]
