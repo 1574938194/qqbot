@@ -1,0 +1,20 @@
+.venv/
+.env
+.env.*
+!.env.example
+data/
+__pycache__/
+.pytest_cache/
+*.egg-info/
+.tmp/
+# Personal persona files and local runtime credentials must stay local.
+/角色扮演*.md
+/VALIDATION.md
+*.sqlite*
+*.db
+*.log
+*.pid
+*.pem
+*.key
+*.p12
+*.pfx
