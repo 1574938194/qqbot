@@ -143,4 +143,4 @@ docs/OPERATIONS.md      详细配置、运行语义与排错
 .env.example            不含真实密钥的配置模板
 ```
 
-管理员私聊发送 **签到**，调用 buddyproxy 当前站点账号池签到并返回脱敏汇总。`BUDDY_SITE` 默认为 `global`，国内站设为 `cn`；`BUDDY_ADMIN_PASSWORD` 对应代理管理密码。国际站通常没有签到活动，返回不支持属于正常结果。
+管理员私聊发送 **签到**，调用 buddyproxy 当前站点账号池签到并返回脱敏汇总。管理员通过 `/pool` 查看、`/pool cn` 切国内、`/pool global` 切国际，配置由代理持久化；`BUDDY_ADMIN_PASSWORD` 对应代理管理密码。国际站通常没有签到活动，返回不支持属于正常结果。

@@ -11,7 +11,7 @@ docker build \
 
 默认使用 Docker Hub 和 PyPI；镜像加速源按自己的网络环境选择。Windows 专用依赖带平台标记，Linux 不安装。
 
-管理员私聊发送 `签到`，通过代理管理接口给 `BUDDY_SITE` 指定的账号池签到。默认 `global`，国内站设为 `cn`；代理启用管理密码时配置 `BUDDY_ADMIN_PASSWORD`，不使用聊天 API Key 代替。国际站可能返回“不支持”，不会伪报签到成功。超时后部分账号可能已完成，重试会返回“已签”。
+管理员私聊发送 `签到`，自动跟随代理当前默认号池签到。管理员使用 `/pool` 查看、`/pool cn` 切国内、`/pool global` 切国际；代理启用管理密码时配置 `BUDDY_ADMIN_PASSWORD`，不使用聊天 API Key 代替。国际站可能返回“不支持”，不会伪报签到成功。超时后部分账号可能已完成，重试会返回“已签”。
 
 使用 Python 3.12 容器运行机器人，宿主机运行 buddyproxy，NapCat 独立容器运行。`compose.yaml` 使用 Linux host 网络，机器人仅监听 `127.0.0.1:8080`；NapCat 也应使用 host 网络，以连接反向 WebSocket。
 
@@ -26,3 +26,5 @@ Linux 使用 `TTS_BACKEND=edge`，无 Windows SAPI 回退。Python 命令工具�
 迁移前停止旧机器人，备份旧代码、配置、数据库以及 NapCat 全部挂载卷。先建立新版本目录再启动，保留旧目录及容器以便回滚。不同旧版数据库格式应先检查，不直接覆盖；本地Windows数据迁入Linux时检查任务文件路径和未投递通知。不能让同一个QQ同时在两台主机运行NapCat。
 
 回滚时停止新机器人和新NapCat，恢复迁移前数据库备份与旧容器配置，再启动旧版本。模型凭据、QQ登录缓存、日志和数据库均不得提交到GitHub。
+
+号池切换由 buddyproxy 官方管理 API 保存。代理启动建议通过 `CODEBUDDY_PROXY_ENV_FILE` 指定持久化配置文件，避免另外的进程环境或启动脚本固定 `CODEBUDDY_SITE`、`CODEBUDDY_BASE_URL` 等路由设置覆盖已保存的号池。项目不在启动时切换代理号池。显式 `cn:`/`global:` 模型前缀、绑定区域的 Key 或 `X-Site` 请求头仍会覆盖默认路由。

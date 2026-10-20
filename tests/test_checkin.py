@@ -19,6 +19,8 @@ async def test_result(monkeypatch, status, payload, expected):
     def handle(request):
         assert request.url.path == '/direct-admin/api/codebuddy/checkin'
         assert request.method == 'POST'
+        import json
+        assert json.loads(request.content) == {}  # 跟随代理当前号池，不能固定为国际。
         assert request.headers['Authorization'].startswith('Basic ')
         return httpx.Response(status, json=payload)
     monkeypatch.setattr(httpx, 'AsyncClient', lambda **kw: original(**kw, transport=httpx.MockTransport(handle)))
