@@ -90,7 +90,7 @@ async def receive(bot: Bot, event: MessageEvent):
             await bot.send_private_msg(user_id=event.user_id, message=Message(MessageSegment.record(audio)))
     images = [segment for segment in event.message if segment.type == 'image']
     text = event.get_plaintext()
-    if media and not images and text.strip().split(maxsplit=1)[:1] and text.strip().split(maxsplit=1)[0].lower() in ('/voice', '/say'):
+    if media and not images and text.strip().split(maxsplit=1)[:1] and text.strip().split(maxsplit=1)[0].lower() in ('/voice', '/say', '/speaker'):
         try:
             result = await media.command(event.user_id, text)
             if isinstance(result, bytes):
@@ -112,7 +112,7 @@ async def receive(bot: Bot, event: MessageEvent):
                 for start in range(0, len(reply), service.config.tts_max_chars):
                     if not service.store.allowed(event.user_id):
                         break
-                    await send_audio(await media.synthesize(reply[start:start + service.config.tts_max_chars]))
+                    await send_audio(await media.synthesize(reply[start:start + service.config.tts_max_chars], uid=event.user_id))
             except Exception as exc:
                 logging.getLogger(__name__).warning('voice reply failure: %s', type(exc).__name__)
                 if mode == 'on':

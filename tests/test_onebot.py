@@ -8,6 +8,8 @@ import subprocess
 import sys
 import threading
 import re
+import io
+import wave
 from PIL import Image
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -26,12 +28,26 @@ def free_port():
 
 async def test_reverse_websocket(tmp_path):
     calls = []
+    speech_calls = []
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_POST(self):
-            calls.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+            body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+            if self.path == '/tts':
+                speech_calls.append(body)
+                output = io.BytesIO()
+                with wave.open(output, 'wb') as audio:
+                    audio.setparams((1, 2, 32000, 0, 'NONE', 'not compressed'))
+                    audio.writeframes(b'\x01\x00' * 32000)
+                payload = output.getvalue()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            calls.append(body)
             final = '[CQ:at,qq=123]最终正文' * 3
             if any(isinstance(m['content'], list) for m in calls[-1]['messages']):
                 final = '图片里有一个蓝色方块。'
@@ -56,7 +72,8 @@ async def test_reverse_websocket(tmp_path):
            'DB_PATH': str(tmp_path / 'ws.db'), 'MESSAGE_CHARS': '12',
            # 等待提示由 test_reply_wait 覆盖，此处只检查最终正文分段收发。
            'CHAT_NOTICE_SECONDS': '60', 'CHAT_TIMEOUT': '90',
-           'VISION_MODEL': 'vision-test', 'TTS_BACKEND': 'sapi', 'TTS_TIMEOUT': '30'}
+           'VISION_MODEL': 'vision-test', 'TTS_BACKEND': 'genie', 'TTS_TIMEOUT': '30',
+           'TTS_BASE_URL': f'http://127.0.0.1:{server.server_port}'}
     logfile = tmp_path / 'bot.log'
     with logfile.open('w', encoding='utf-8') as output:
         process = subprocess.Popen([sys.executable, 'bot.py'], cwd=Path(__file__).resolve().parents[1],
@@ -172,7 +189,11 @@ async def test_reverse_websocket(tmp_path):
                 assert await receive_segment() == '已开启语音回复。'
                 await ws.send(event(ADMIN, '/voice off'))
                 assert await receive_segment() == '已切换为文字回复。'
-                if os.name == 'nt':
+                for speaker in ('noto', 'hayami', 'aoi'):
+                    await ws.send(event(ADMIN, '/speaker ' + speaker))
+                    acknowledgment = ''
+                    while not acknowledgment.endswith('试听。'):
+                        acknowledgment += await receive_segment()
                     await ws.send(event(ADMIN, '/say 你好小爱'))
                     action = json.loads(await asyncio.wait_for(ws.recv(), 35))
                     assert action['action'] == 'send_private_msg'
@@ -180,6 +201,20 @@ async def test_reverse_websocket(tmp_path):
                     assert action['params']['message'][0]['data']['file'].startswith('base64://')
                     await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 4}, 'echo': action['echo']}))
                     assert len(calls) == 3  # /say 不调用模型
+                    assert speech_calls[-1] == {'text': '你好小爱', 'speaker': speaker}
+                await ws.send(event(ADMIN, '/speaker noto'))
+                acknowledgment = ''
+                while not acknowledgment.endswith('试听。'):
+                    acknowledgment += await receive_segment()
+                await ws.send(event(ADMIN, '/voice on'))
+                assert await receive_segment() == '已开启语音回复。'
+                await ws.send(event(ADMIN, '语音回复测试'))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 35))
+                assert action['action'] == 'send_private_msg'
+                assert action['params']['message'][0]['type'] == 'record'
+                await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 5}, 'echo': action['echo']}))
+                assert len(calls) == 4
+                assert speech_calls[-1] == {'text': '[CQ:at,qq=123]最终正文' * 3, 'speaker': 'noto'}
         finally:
             process.terminate()
             process.wait(timeout=10)

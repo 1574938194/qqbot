@@ -1,0 +1,11 @@
+*
+!Dockerfile
+!requirements.lock
+!engine.py
+!server.py
+!source/
+!source/LICENSE
+!source/genie_tts/
+!source/genie_tts/**
+**/__pycache__
+**/*.pyc

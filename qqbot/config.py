@@ -60,6 +60,7 @@ class Settings:
     tts_prompt_text: str = ''
     tts_prompt_lang: str = 'all_ja'
     tts_text_lang: str = 'zh'
+    tts_default_speaker: str = 'aoi'
 
     def __post_init__(self):
         for name in ("timeout", "keep_rounds", "context_tokens", "compress_tokens", "max_input_tokens", "max_reply_tokens", "summary_tokens", "message_chars", "memory_timeout", "memory_top_k", "memory_chars", "task_poll_seconds", "task_concurrency", "task_max_steps", "task_max_per_user", "task_tool_timeout", "task_run_timeout", "task_result_chars"):
@@ -69,14 +70,16 @@ class Settings:
             raise ValueError('CHAT_NOTICE_SECONDS 必须大于0且小于 CHAT_TIMEOUT')
         if min(self.vision_max_images, self.vision_max_bytes, self.vision_timeout, self.tts_timeout, self.tts_max_chars) <= 0:
             raise ValueError('图片及语音限制必须大于0')
-        if self.tts_backend not in ('auto', 'edge', 'sapi', 'gptsovits', 'none'):
-            raise ValueError('TTS_BACKEND 必须为 auto、edge、sapi、gptsovits 或 none')
-        if self.tts_backend == 'gptsovits':
+        if self.tts_backend not in ('auto', 'edge', 'sapi', 'gptsovits', 'genie', 'none'):
+            raise ValueError('TTS_BACKEND 必须为 auto、edge、sapi、gptsovits、genie 或 none')
+        if self.tts_default_speaker not in ('aoi', 'noto', 'hayami', 'edge'):
+            raise ValueError('TTS_DEFAULT_SPEAKER 必须为 aoi、noto、hayami 或 edge')
+        if self.tts_backend in ('gptsovits', 'genie'):
             from urllib.parse import urlsplit
             url = urlsplit(self.tts_base_url)
             if url.scheme not in ('http', 'https') or not url.hostname or url.username or url.password or url.query or url.fragment:
                 raise ValueError('TTS_BASE_URL 必须是无凭据和查询参数的 HTTP(S) 地址')
-            if not self.tts_ref_audio.strip() or not self.tts_prompt_text.strip():
+            if self.tts_backend == 'gptsovits' and (not self.tts_ref_audio.strip() or not self.tts_prompt_text.strip()):
                 raise ValueError('GPT-SoVITS 必须配置 TTS_REF_AUDIO 和 TTS_PROMPT_TEXT')
         if not 0 < self.compress_tokens < self.context_tokens:
             raise ValueError('COMPRESS_TOKENS 必须大于 0 且小于 CONTEXT_TOKENS')
@@ -140,6 +143,7 @@ class Settings:
             tts_prompt_text=value('TTS_PROMPT_TEXT', ''),
             tts_prompt_lang=value('TTS_PROMPT_LANG', 'all_ja'),
             tts_text_lang=value('TTS_TEXT_LANG', 'zh'),
+            tts_default_speaker=value('TTS_DEFAULT_SPEAKER', 'aoi'),
             **{name: int(value(name.upper(), str(getattr(cls, name)))) for name in (
                 "compress_rounds", "keep_rounds", "context_tokens", "compress_tokens", "max_input_tokens",
                 "max_reply_tokens", "summary_tokens", "message_chars", "memory_top_k", "memory_chars",

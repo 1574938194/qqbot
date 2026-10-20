@@ -68,6 +68,9 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 | `/emotion`、`/memory status` | 情感估算、外部记忆同步状态 |
 | `/say 你好，我是小爱` | 单次发语音，不调用聊天模型 |
 | `/voice on` / `off` / `both` | 语音 / 默认文字 / 文字加语音 |
+| `/speaker list` | 查看可选音色和自己的当前选择 |
+| `/speaker aoi` / `noto` / `hayami` / `edge` | 悠木碧 / 能登麻美子 / 早见沙织 / 原 Edge 晓晓；选择按用户保存 |
+| `/speaker reset` | 恢复默认音色；不改变文字/语音回复模式 |
 | `/remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
 | `/task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
 | `/task list`、`/task show ID`、`/task steps ID` | 查询任务与执行进度 |
@@ -120,7 +123,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-64项自动测试已通过，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
+100项机器人自动测试已通过，另有6项 ONNX 语义边界测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
 
 以下脚本显式调用真实服务，使用测试输入和临时数据库，不向 QQ 发送消息：
 
@@ -148,3 +151,5 @@ docs/OPERATIONS.md      详细配置、运行语义与排错
 `/setname 名字` 设置角色正式名字；不带参数可查看当前保存的名字及昵称。`/setnickname 昵称` 单独修改昵称并同步 QQ。`/status` 也会显示两者。名字作为运行时身份覆盖旧人设和旧历史中的旧自称，原始人设与聊天历史保留。
 
 GPT-SoVITS 纯云端部署和音色配置见 [语音部署](deploy/gpt-sovits/README.md)。
+
+完整 GPT + SoVITS ONNX、多音色部署见 [ONNX 语音部署](deploy/onnx-speech/README.md)。设置 `TTS_BACKEND=genie` 后可使用 `/speaker`，默认仍为文字回复。三套克隆模型及各自参考音频独立挂载，只驻留当前选中的一套声学模型。选择 `edge` 时使用原微软晓晓语音；克隆生成失败会明确报错，不会自动换声音。

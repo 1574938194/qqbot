@@ -25,3 +25,5 @@ __pycache__/
 *.onnx.data
 /deploy/gpt-sovits/source/
 /deploy/gpt-sovits/assets/
+/deploy/onnx-speech/source/
+/deploy/onnx-speech/assets/
