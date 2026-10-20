@@ -18,3 +18,10 @@ __pycache__/
 *.key
 *.p12
 *.pfx
+*.ckpt
+*.pth
+*.safetensors
+*.onnx
+*.onnx.data
+/deploy/gpt-sovits/source/
+/deploy/gpt-sovits/assets/

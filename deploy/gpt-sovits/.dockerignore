@@ -1,0 +1,10 @@
+*
+!Dockerfile
+!requirements-cpu.txt
+!requirements-cpu.lock
+!tts.yaml
+!serve.py
+!bert_onnx.py
+!fixed_voice.py
+!source/
+!source/**

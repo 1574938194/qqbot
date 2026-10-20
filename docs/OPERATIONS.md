@@ -183,14 +183,19 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `VISION_MAX_IMAGES` | `3` | 单条消息图片数上限 |
 | `VISION_MAX_BYTES` | `5242880` | 每张原图字节上限 |
 | `VISION_TIMEOUT` | `40` | 图片下载及识别的总时限秒数，仍受CHAT_TIMEOUT约束 |
-| `TTS_BACKEND` | `auto` | auto优先Edge在线语音、失败回退Windows SAPI；也可edge/sapi/none |
+| `TTS_BACKEND` | `auto` | auto优先Edge在线语音、失败回退Windows SAPI；也可edge/sapi/gptsovits/none |
 | `TTS_VOICE` | `zh-CN-XiaoxiaoNeural` | Edge中文女声音色；Windows回退使用系统默认语音 |
 | `TTS_TIMEOUT` | `30` | 每段语音合成时限秒数 |
 | `TTS_MAX_CHARS` | `500` | `/say` 字数上限；自动语音超过此长度分段合成和发送 |
+| `TTS_BASE_URL` | `http://127.0.0.1:9880` | GPT-SoVITS API 地址 |
+| `TTS_REF_AUDIO` | 空 | GPT-SoVITS 服务内的参考音频路径 |
+| `TTS_PROMPT_TEXT` | 空 | 参考音频的准确转写，启用gptsovits时必填 |
+| `TTS_PROMPT_LANG` | `all_ja` | 参考音频语言 |
+| `TTS_TEXT_LANG` | `zh` | 合成正文语言 |
 
 默认文字回复。`/voice on` 后只有成功的聊天正文会合成为语音，命令确认、错误提示和后台任务通知仍用文字；`/voice both` 同时发送正文与语音。语音生成或发送失败时回退完整文字并提示，避免吞掉成功回复。`/say 内容` 可直接测试。发出的音频使用OneBot `record` 消息段，由NapCat转换并发送QQ语音，不将音频base64当文字发送。撤销白名单后不再投递。
 
-在线合成使用 [edge-tts](https://github.com/rany2/edge-tts)，待朗读文本会发送到微软Edge语音服务，服务可用性不保证；如需仅本地处理，设置 `TTS_BACKEND=sapi`。SAPI无额外云密钥，音色依赖本机Windows语音包。输入语音转文字目前未实现。语音临时文件在合成后清理，正常运行不保存音频；显式验收脚本会保留固定测试音频到data供检查。
+Edge合成使用 [edge-tts](https://github.com/rany2/edge-tts)，待朗读文本会发送到微软Edge语音服务；Windows本机合成可设置 `TTS_BACKEND=sapi`，音色依赖系统语音包。自托管克隆音色使用 `TTS_BACKEND=gptsovits`，部署方法见 [云端语音指南](../deploy/gpt-sovits/README.md)。该后端失败不会切换到其他音色，服务入口隐藏上游逐句文本日志，模型和参考音频不进入Git。输入语音转文字目前未实现。语音临时文件在合成后清理，正常运行不保存音频；显式验收脚本会保留固定测试音频供检查。
 
 ## Mem0 / Letta 长期记忆
 

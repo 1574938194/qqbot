@@ -1,0 +1,8 @@
+custom:
+  device: cpu
+  is_half: false
+  version: v2ProPlus
+  bert_base_path: GPT_SoVITS/pretrained_models/chinese-roberta-wwm-ext-large
+  cnhuhbert_base_path: GPT_SoVITS/pretrained_models/chinese-hubert-base
+  t2s_weights_path: /voices/custom/gpt.ckpt
+  vits_weights_path: /voices/custom/sovits.pth

@@ -9,6 +9,7 @@ import os
 import socket
 import subprocess
 import tempfile
+import wave
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -43,7 +44,7 @@ class Media:
     def __init__(self, store, llm, config):
         self.store, self.llm, self.config = store, llm, config
         self.client = httpx.AsyncClient(timeout=15, trust_env=False)
-        self.tts_gate = asyncio.Semaphore(2)
+        self.tts_gate = asyncio.Semaphore(1 if config.tts_backend == 'gptsovits' else 2)
 
     def voice_mode(self, uid):
         row = self.store.db.execute('SELECT value FROM settings WHERE key=?', ('voice_mode:' + str(uid),)).fetchone()
@@ -57,7 +58,8 @@ class Media:
         args = parts[1].strip() if len(parts) > 1 else ''
         if command == '/voice':
             if args not in ('on', 'off', 'both'):
-                return f'当前语音模式：{self.voice_mode(uid)}。用法：/voice on|off|both；/say 内容 单次朗读。'
+                voice = f'\n当前音色：{self.config.tts_voice}（合成语音）。' if self.config.tts_backend == 'gptsovits' else ''
+                return f'当前语音模式：{self.voice_mode(uid)}。用法：/voice on|off|both；/say 内容 单次朗读。' + voice
             with self.store.db:
                 self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('voice_mode:' + str(uid), args))
             return {'on': '已开启语音回复。', 'off': '已切换为文字回复。', 'both': '已开启文字和语音回复。'}[args]
@@ -167,6 +169,27 @@ try { $speech.SetOutputToWaveFile($payload.path); $speech.Speak([string]$payload
                     process.kill()
                     await process.wait()
 
+    async def sovits_audio(self, text):
+        payload = {'text': text, 'text_lang': self.config.tts_text_lang,
+                   'ref_audio_path': self.config.tts_ref_audio,
+                   'prompt_text': self.config.tts_prompt_text, 'prompt_lang': self.config.tts_prompt_lang,
+                   'text_split_method': 'cut5', 'batch_size': 1, 'parallel_infer': False,
+                   'media_type': 'wav', 'streaming_mode': False, 'seed': 42}
+        async with self.client.stream('POST', self.config.tts_base_url + '/tts', json=payload,
+                                      timeout=self.config.tts_timeout) as response:
+            response.raise_for_status()
+            raw = bytearray()
+            async for chunk in response.aiter_bytes():
+                raw.extend(chunk)
+                if len(raw) > 10 * 1024 * 1024:
+                    raise ValueError('audio too large')
+        if not raw.startswith(b'RIFF') or raw[8:12] != b'WAVE':
+            raise ValueError('invalid WAV response')
+        with wave.open(io.BytesIO(raw), 'rb') as audio:
+            if audio.getnframes() <= 0 or len(audio.readframes(1)) == 0:
+                raise ValueError('empty WAV response')
+        return bytes(raw)
+
     async def synthesize(self, text):
         if not text.strip() or len(text) > self.config.tts_max_chars:
             raise ModelError(f'单次语音最多{self.config.tts_max_chars}个字符，请缩短内容或切回文字。')
@@ -175,6 +198,8 @@ try { $speech.SetOutputToWaveFile($payload.path); $speech.Speak([string]$payload
         try:
             async with asyncio.timeout(self.config.tts_timeout):
                 async with self.tts_gate:
+                    if self.config.tts_backend == 'gptsovits':
+                        return await self.sovits_audio(text)
                     if self.config.tts_backend == 'sapi':
                         return await self.sapi_audio(text)
                     try:
