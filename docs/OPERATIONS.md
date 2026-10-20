@@ -74,7 +74,7 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 
 ## 配置
 
-修改 `.env` 后重启。进程环境变量优先。所有数值参数必须大于 0，`KEEP_ROUNDS` 必须小于 `COMPRESS_ROUNDS`。
+修改 `.env` 后重启。进程环境变量优先。上下文最大 260K，超过 240K tokens 时自动压缩（用量为估算值）。`COMPRESS_ROUNDS=0` 关闭按轮数触发；启用轮数触发时 `KEEP_ROUNDS` 必须小于 `COMPRESS_ROUNDS`。`COMPRESS_TOKENS` 必须大于 0 且小于 `CONTEXT_TOKENS`。
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
@@ -91,9 +91,10 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `LLM_RATE_BACKOFF` | `30` | 明确上游限流时首次退避秒数，下一次加倍，最多 120 秒 |
 | `LLM_RATE_RETRIES` | `2` | 仅对明确 429/代理 `rate_limited` 重试次数，设 0 禁用 |
 | `DB_PATH` | `data/buddy.sqlite3` | SQLite 文件 |
-| `COMPRESS_ROUNDS` | `20` | 请求前已有历史超过该轮数时压缩 |
+| `COMPRESS_ROUNDS` | `0` | 0 关闭按轮数触发；正数表示已有历史超过该轮数时压缩 |
 | `KEEP_ROUNDS` | `6` | 压缩保留最近完整对话轮数 |
-| `CONTEXT_TOKENS` | `12000` | 预计输入超过该值时压缩；压缩后仍超出则拒绝聊天请求 |
+| `CONTEXT_TOKENS` | `260000` | 预计输入最大预算，压缩后仍超出则拒绝聊天请求 |
+| `COMPRESS_TOKENS` | `240000` | 预计输入严格超过该值时自动摘要压缩 |
 | `MAX_INPUT_TOKENS` | `6000` | 单条用户输入估算上限 |
 | `MAX_REPLY_TOKENS` | `1200` | 聊天模型输出上限 |
 | `SUMMARY_TOKENS` | `1600` | 摘要模型输出上限 |

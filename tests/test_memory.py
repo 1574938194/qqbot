@@ -139,7 +139,7 @@ async def test_letta_block_create_update_recall_delete(setup_memory):
 async def test_memory_budget_and_failed_chat_do_not_update_state(setup_memory):
     def handle(request):
         return httpx.Response(200, json={'results': [{'memory': '长' * 2000}]})
-    s = setup_memory(handle, context_tokens=1300)
+    s = setup_memory(handle, context_tokens=1300, compress_tokens=1200)
     s.llm.fail = True
     assert await s.handle(ADMIN, '我难过') == '失败'
     assert not s.store.emotion(ADMIN) and not s.store.pending_memory(ADMIN)

@@ -101,6 +101,7 @@ async def test_manual_repeated_compression_and_failure(service):
 
 async def test_auto_limits_and_errors(service):
     s = service
+    s.config = replace(s.config, compress_rounds=20)
     populate(s, 21)
     await s.handle(ADMIN, '你好')
     assert [summary for _, summary in s.llm.calls] == [True, False]
@@ -119,12 +120,40 @@ async def test_auto_limits_and_errors(service):
 
 async def test_token_trigger_and_still_over_budget(service):
     s = service
-    s.config = replace(s.config, context_tokens=1500)
+    s.config = replace(s.config, context_tokens=1500, compress_tokens=1400)
     for _ in range(8):
         s.store.append(ADMIN, '中' * 200, '文' * 200)
     assert '仍超出' in await s.handle(ADMIN, '短消息')
     assert [summary for _, summary in s.llm.calls] == [True]
     assert len(s.store.history(ADMIN)) == 6
+
+
+@pytest.mark.parametrize('budget,compressed', [(240000, False), (240001, True)])
+async def test_chat_240k_boundary_without_round_trigger(service, budget, compressed):
+    s = service
+    populate(s, 21)
+    s.input_tokens = lambda uid, messages: budget if len(s.store.history(uid)) > 6 else 1000
+    await s.handle(ADMIN, '继续聊')
+    assert [summary for _, summary in s.llm.calls] == ([True, False] if compressed else [False])
+    assert len(s.store.history(ADMIN)) == (7 if compressed else 22)
+    assert s.config.context_tokens == 260000
+
+
+async def test_240k_compression_failure_preserves_data(service):
+    s = service
+    populate(s, 8)
+    s.input_tokens = lambda uid, messages: 240001
+    before = s.store.history(ADMIN), s.store.summary(ADMIN)
+    s.llm.fail = True
+    assert '自动压缩失败' in await s.handle(ADMIN, '继续聊')
+    assert before == (s.store.history(ADMIN), s.store.summary(ADMIN))
+    assert [summary for _, summary in s.llm.calls] == [True]
+
+
+def test_context_configuration_bounds():
+    for changes in ({'compress_tokens': 260000}, {'compress_tokens': 0}, {'compress_rounds': -1}):
+        with pytest.raises(ValueError):
+            replace(Settings(), **changes)
 
 
 async def test_chat_reset_serialization(service):

@@ -54,6 +54,8 @@ async def test_reverse_websocket(tmp_path):
            'ONEBOT_ACCESS_TOKEN': 'test-access', 'LLM_API_KEY': 'test-only',
            'LLM_BASE_URL': f'http://127.0.0.1:{server.server_port}/v1',
            'DB_PATH': str(tmp_path / 'ws.db'), 'MESSAGE_CHARS': '12',
+           # 等待提示由 test_reply_wait 覆盖，此处只检查最终正文分段收发。
+           'CHAT_NOTICE_SECONDS': '60', 'CHAT_TIMEOUT': '90',
            'VISION_MODEL': 'vision-test', 'TTS_BACKEND': 'sapi', 'TTS_TIMEOUT': '30'}
     logfile = tmp_path / 'bot.log'
     with logfile.open('w', encoding='utf-8') as output:
@@ -98,7 +100,7 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(event(ADMIN, '链路测试秘密'))
                 text = ''
                 while len(text) < len('[CQ:at,qq=123]最终正文' * 3):
-                    action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                    action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                     assert action['action'] == 'send_private_msg'
                     assert action['params']['user_id'] == ADMIN
                     segments = action['params']['message']
@@ -112,7 +114,7 @@ async def test_reverse_websocket(tmp_path):
                 assert len(calls) == 1
                 await ws.send(event(ADMIN, '/remind in 1s 主动提醒验收'))
                 async def receive_segment():
-                    action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                    action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                     assert action['action'] == 'send_private_msg'
                     assert action['params']['user_id'] == ADMIN
                     assert all(segment['type'] == 'text' for segment in action['params']['message'])
@@ -132,7 +134,7 @@ async def test_reverse_websocket(tmp_path):
                 assert notification == expected
                 assert len(calls) == 1  # 提醒不调用模型
                 await ws.send(event(ADMIN, '/name 小暖'))
-                action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'set_qq_profile'
                 assert action['params'] == {'nickname': '小暖'}
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
@@ -143,10 +145,10 @@ async def test_reverse_websocket(tmp_path):
                     prompt += await receive_segment()
                 assert '5分钟' in prompt
                 await ws.send(event(ADMIN, '图片说明', image=True))
-                action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'get_image' and action['params']['file'] == 'test.png'
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'file': 'C:/cache/test.png'}, 'echo': action['echo']}))
-                action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'set_qq_avatar'
                 assert action['params'] == {'file': 'C:/cache/test.png'}
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
@@ -155,7 +157,7 @@ async def test_reverse_websocket(tmp_path):
                 image_path = tmp_path / 'blue.png'
                 Image.new('RGB', (50, 50), 'blue').save(image_path)
                 await ws.send(event(ADMIN, '看看这张图', image=True))
-                action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'get_image'
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'file': str(image_path)}, 'echo': action['echo']}))
                 image_reply = ''

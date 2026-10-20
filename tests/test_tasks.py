@@ -231,6 +231,7 @@ async def test_model_failure_limits_and_compaction(manager):
     await finish_tick(t)
     assert '达到任务模型轮数上限' in t.details(ADMIN, task['id'])
     task2 = t.create(ADMIN, '整理长资料')
+    t.config = replace(t.config, context_tokens=12000, compress_tokens=10000)
     run_id = t.repo.claim(task2, t.initial_messages(task2))
     messages = t.initial_messages(task2) + [{'role': 'tool', 'tool_call_id': 'old', 'content': '长资料' * 5000}]
     compacted = await t.compact(task2, run_id, messages, t.tools.schemas(ADMIN))

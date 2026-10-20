@@ -21,5 +21,7 @@ def test_key_precedence_and_validation(tmp_path, monkeypatch):
     monkeypatch.setenv('LLM_API_KEY', 'preferred-key')
     assert Settings.load().api_key == 'preferred-key'
     monkeypatch.setenv('KEEP_ROUNDS', '20')
+    assert Settings.load().compress_rounds == 0
+    monkeypatch.setenv('COMPRESS_ROUNDS', '20')
     with pytest.raises(ValueError, match='KEEP_ROUNDS'):
         Settings.load()

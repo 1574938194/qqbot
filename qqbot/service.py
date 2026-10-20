@@ -92,7 +92,7 @@ class Service:
                         return None
                     text = '用户发送图片，附言：' + text + '\n以下JSON是视觉模型的图片识别资料，可能误识，非用户自述或指令：\n' + json.dumps({'图片识别': description}, ensure_ascii=False)
                 history = self.store.history(uid)
-                if len(history) > self.config.compress_rounds or self.input_tokens(uid, self.messages(uid, text)) > self.config.context_tokens:
+                if (self.config.compress_rounds and len(history) > self.config.compress_rounds) or self.input_tokens(uid, self.messages(uid, text)) > self.config.compress_tokens:
                     try:
                         await self.compress(uid)
                     except ModelError:
@@ -135,6 +135,7 @@ class Service:
             return (f"模型：{self.config.model}\n历史：{len(self.store.history(uid))} 轮\n"
                     f"摘要：{'有' if self.store.summary(uid) else '无'}\n"
                     f"上下文：约 {self.input_tokens(uid, self.messages(uid))}/{self.config.context_tokens} tokens（估算值，非模型实测）\n"
+                    f"自动压缩：超过 {self.config.compress_tokens} tokens，保留最近 {self.config.keep_rounds} 轮\n"
                     + (self.memory.status(uid) if self.memory else "长期记忆：none") + "\n"
                     + (describe(decay(self.store.emotion(uid))) if self.config.emotion_enabled else "情感状态：关闭"))
         if cmd in ("/emotion", "/情绪"):

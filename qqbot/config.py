@@ -19,9 +19,10 @@ class Settings:
     timeout: float = 90
     chat_timeout: float = 90
     chat_notice_seconds: float = 8
-    compress_rounds: int = 20
+    compress_rounds: int = 0
     keep_rounds: int = 6
-    context_tokens: int = 12000
+    context_tokens: int = 260000
+    compress_tokens: int = 240000
     max_input_tokens: int = 6000
     max_reply_tokens: int = 1200
     summary_tokens: int = 1600
@@ -59,7 +60,7 @@ class Settings:
     def __post_init__(self):
         if self.buddy_site not in ('global', 'cn'):
             raise ValueError('BUDDY_SITE 必须为 global 或 cn')
-        for name in ("timeout", "compress_rounds", "keep_rounds", "context_tokens", "max_input_tokens", "max_reply_tokens", "summary_tokens", "message_chars", "memory_timeout", "memory_top_k", "memory_chars", "task_poll_seconds", "task_concurrency", "task_max_steps", "task_max_per_user", "task_tool_timeout", "task_run_timeout", "task_result_chars"):
+        for name in ("timeout", "keep_rounds", "context_tokens", "compress_tokens", "max_input_tokens", "max_reply_tokens", "summary_tokens", "message_chars", "memory_timeout", "memory_top_k", "memory_chars", "task_poll_seconds", "task_concurrency", "task_max_steps", "task_max_per_user", "task_tool_timeout", "task_run_timeout", "task_result_chars"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} 必须大于 0")
         if not 0 < self.chat_notice_seconds < self.chat_timeout:
@@ -68,7 +69,11 @@ class Settings:
             raise ValueError('图片及语音限制必须大于0')
         if self.tts_backend not in ('auto', 'edge', 'sapi', 'none'):
             raise ValueError('TTS_BACKEND 必须为 auto、edge、sapi 或 none')
-        if self.keep_rounds >= self.compress_rounds:
+        if not 0 < self.compress_tokens < self.context_tokens:
+            raise ValueError('COMPRESS_TOKENS 必须大于 0 且小于 CONTEXT_TOKENS')
+        if self.compress_rounds < 0:
+            raise ValueError('COMPRESS_ROUNDS 必须大于或等于 0（0 表示关闭轮数触发）')
+        if self.compress_rounds and self.keep_rounds >= self.compress_rounds:
             raise ValueError("KEEP_ROUNDS 必须小于 COMPRESS_ROUNDS")
         if self.memory_backend not in ("none", "mem0", "letta"):
             raise ValueError("MEMORY_BACKEND 必须为 none、mem0 或 letta")
@@ -123,7 +128,7 @@ class Settings:
             tts_timeout=float(value('TTS_TIMEOUT', '30')),
             tts_max_chars=int(value('TTS_MAX_CHARS', '500')),
             **{name: int(value(name.upper(), str(getattr(cls, name)))) for name in (
-                "compress_rounds", "keep_rounds", "context_tokens", "max_input_tokens",
+                "compress_rounds", "keep_rounds", "context_tokens", "compress_tokens", "max_input_tokens",
                 "max_reply_tokens", "summary_tokens", "message_chars", "memory_top_k", "memory_chars",
                 "task_concurrency", "task_max_steps", "task_max_per_user", "task_result_chars")},
         )
