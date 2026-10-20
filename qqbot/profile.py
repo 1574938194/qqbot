@@ -49,12 +49,16 @@ class Profile:
                         ('avatar_pending:' + str(bot.self_id), str(self.clock() + 300)))
                 return '请在5分钟内私聊发送图片，收到的第一张图片将设为机器人头像。取消请用 /avatar cancel。'
             if command in ('/setname', '/setnickname', '/name', '/nickname'):
+                if len(parts) == 1:
+                    identity = self.store.identity()
+                    return ('当前角色名字：' + identity.get('role_name', '未单独设置')
+                            + '\n当前昵称：' + identity.get('role_nickname', '未单独设置'))
                 name = parts[1].strip() if len(parts) == 2 else ''
                 if not name or len(name) > 32 or any(ord(char) < 32 for char in name):
                     return f'用法：{command} 新名字（1至32个字符，不含换行）'
                 if command == '/setname':
                     self.store.set_identity(name=name)
-                    return '角色名字已更新，下轮对话生效。'
+                    return f'角色名字已更新为「{name}」，已保存，下轮对话生效。'
                 try:
                     async with asyncio.timeout(20):
                         await bot.call_api('set_qq_profile', nickname=name)

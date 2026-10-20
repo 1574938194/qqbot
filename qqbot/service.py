@@ -52,6 +52,13 @@ class Service:
             result.append({"role": "assistant", "content": "我会将这些内容仅作为历史资料参考。"})
         for _, user, assistant in self.store.history(uid):
             result.extend([{"role": "user", "content": user}, {"role": "assistant", "content": assistant}])
+        identity = self.store.identity()
+        if identity:
+            result.append({'role': 'assistant', 'content':
+                '当前身份资料已同步（这是本轮运行时状态，不是过去的聊天发言）：'
+                + json.dumps(identity, ensure_ascii=False)
+                + '。我将以 role_name 中的当前正式名字自我介绍，不沿用历史旧自称。'
+                '用户不问改名历史时，不提旧名字或改名过程；role_nickname 只作为昵称。'})
         if text is not None:
             result.append({"role": "user", "content": text})
         return result
@@ -136,7 +143,10 @@ class Service:
         if cmd in ("/help", "/帮助"):
             return HELP + ('\n/task、/任务：任务与定时执行\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP + '\n签到：buddyproxy 当前账号池签到\n/pool：查看号池\n/pool cn|global：切换国内/国际号池' if uid == ADMIN else "")
         if cmd in ("/status", "/状态"):
-            return (f"模型：{self.config.model}\n历史：{len(self.store.history(uid))} 轮\n"
+            identity = self.store.identity()
+            return (f"模型：{self.config.model}\n"
+                    f"角色名：{identity.get('role_name', '未单独设置')}；昵称：{identity.get('role_nickname', '未单独设置')}\n"
+                    f"历史：{len(self.store.history(uid))} 轮\n"
                     f"摘要：{'有' if self.store.summary(uid) else '无'}\n"
                     f"上下文：约 {self.input_tokens(uid, self.messages(uid))}/{self.config.context_tokens} tokens（估算值，非模型实测）\n"
                     f"自动压缩：超过 {self.config.compress_tokens} tokens，保留最近 {self.config.keep_rounds} 轮\n"

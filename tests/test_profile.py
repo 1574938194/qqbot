@@ -18,6 +18,7 @@ async def test_identity_commands_persist_without_changing_source_prompt(tmp_path
         assert not store.identity() and not bot.calls
         assert '下轮对话生效' in await profile.handle(bot, event('/setname 爱'))
         assert not bot.calls
+        assert '爱' in await profile.handle(bot, event('/setname'))
         assert '已更新' in await profile.handle(bot, event('/setnickname 小爱'))
         assert bot.calls == [('set_qq_profile', {'nickname': '小爱'})]
         assert store.prompt() == original
@@ -26,11 +27,42 @@ async def test_identity_commands_persist_without_changing_source_prompt(tmp_path
         assert store.identity() == {'role_name': '爱', 'role_nickname': '小爱'}
         assert '"role_name": "爱"' in store.model_prompt()
         assert '"role_nickname": "小爱"' in store.model_prompt()
-        assert store.model_prompt().startswith(original)
+        assert original in store.model_prompt()
+        assert store.model_prompt().startswith('管理员设置的当前身份')
         bot.fail = True
         profile = Profile(store)
         assert '未确认成功' in await profile.handle(bot, event('/setnickname 失败名字'))
         assert store.identity()['role_nickname'] == '小爱'
+    finally:
+        store.close()
+
+
+async def test_current_name_overrides_old_persona_and_history(tmp_path):
+    from qqbot.config import Settings
+    from qqbot.service import Service
+    from qqbot.llm import json_messages
+    from qqbot.tasks import CONTROL_TOOLS
+    store = Store(str(tmp_path / 'db'))
+    try:
+        original = '你是小暖，按这个名字自我介绍。'
+        store.set_prompt(original)
+        store.append(ADMIN, '你叫什么', '我叫小暖。')
+        store.set_identity(nickname='姚菱心')
+        profile = Profile(store)
+        assert '「梦梦」' in await profile.handle(Bot(), event('/setname 梦梦'))
+        messages = Service(store, None, Settings()).messages(ADMIN, '你叫什么名字')
+        wire = json_messages(messages, CONTROL_TOOLS)
+        assert messages[-2]['role'] == 'assistant'
+        assert '当前身份资料已同步' in messages[-2]['content']
+        assert '梦梦' in messages[-2]['content']
+        system = wire[0]['content']
+        assert system.index('"role_name": "梦梦"') < system.index(original)
+        assert system.rindex('"role_name": "梦梦"') > system.index(original)
+        assert '以 role_name 自我介绍' in system
+        assert store.prompt() == original
+        assert store.identity()['role_nickname'] == '姚菱心'
+        assert store.history(ADMIN)[0][2] == '我叫小暖。'
+        assert '角色名：梦梦' in await Service(store, None, Settings()).handle(ADMIN, '/status')
     finally:
         store.close()
 
@@ -65,7 +97,7 @@ async def test_profile_permissions_name(tmp_path):
         assert await profile.handle(bot, event('/avatar', group=True)) is None
         assert await profile.handle(bot, event('/avatar', uid=99999)) is None
         assert not bot.calls
-        assert '用法' in await profile.handle(bot, event('/name'))
+        assert '当前角色名字' in await profile.handle(bot, event('/name'))
         assert '用法' in await profile.handle(bot, event('/name one\ntwo'))
         assert '已更新' in await profile.handle(bot, event('/name 小暖'))
         assert bot.calls == [('set_qq_profile', {'nickname': '小暖'})]
