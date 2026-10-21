@@ -279,6 +279,23 @@ async def test_reverse_websocket(tmp_path):
                 await client.post('/debug/chat', json={'text': '/status'})
                 assert len(calls) == 6
                 assert len((await client.get('/debug/state')).json()['history']) == history_count + 1
+                picture = io.BytesIO()
+                Image.new('RGB', (20, 20), 'blue').save(picture, format='PNG')
+                result = await client.post('/debug/chat', json={'text': '网页图片测试', 'files': [
+                    {'name': 'blue.png', 'data': base64.b64encode(picture.getvalue()).decode()}]})
+                assert result.status_code == 200 and result.json()['reply'] == '[CQ:at,qq=123]最终正文' * 3
+                assert len(calls) == 8  # 一次识图、一次陪伴正文。
+                assert calls[-2]['messages'][1]['content'][1]['image_url']['url'].startswith('data:image/jpeg;base64,')
+                await client.post('/debug/chat', json={'text': '/setprompt'})
+                web_prompt = '网页文件人设测试\r\n保留换行\r\n'
+                result = await client.post('/debug/chat', json={'files': [
+                    {'name': 'role.md', 'data': base64.b64encode(web_prompt.encode()).decode()}]})
+                assert '已更新' in result.json()['reply'] and not result.json()['prompt_pending']
+                database = sqlite3.connect(tmp_path / 'ws.db')
+                assert database.execute("SELECT value FROM settings WHERE key='prompt'").fetchone()[0] == web_prompt
+                assert database.execute('SELECT count(*) FROM turns').fetchone()[0] == history_count + 2
+                database.close()
+                assert len(calls) == 8
         finally:
             process.terminate()
             process.wait(timeout=10)
@@ -288,3 +305,4 @@ async def test_reverse_websocket(tmp_path):
     log = logfile.read_text(encoding='utf-8')
     assert '链路测试秘密' not in log and 'test-access' not in log and 'test-only' not in log
     assert '网页链路测试秘密' not in log and token not in log
+    assert '网页文件人设测试' not in log and '网页图片测试' not in log

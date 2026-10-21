@@ -1,12 +1,14 @@
 import asyncio
 import base64
 import json
+import io
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 from fastapi import FastAPI
+from PIL import Image
 
 from qqbot.config import ADMIN, Settings
 from qqbot.profile import Profile
@@ -14,6 +16,7 @@ from qqbot.prompt_upload import MAX_BYTES, PromptUpload
 from qqbot.service import Service
 from qqbot.store import Store
 from qqbot.web_chat import WEB_BOT_ID, WebChat
+from qqbot.media import Media
 
 
 @pytest.fixture
@@ -147,4 +150,86 @@ async def test_bad_and_oversized_input(setup):
             assert response.status_code == 400
         assert (await client.post('/debug/chat', content='plain')).status_code == 415
         assert (await client.post('/debug/chat', json={'text': 'a' * (MAX_BYTES + 2000)})).status_code == 413
+        assert not service.llm.complete.called
+
+
+def attachment(name, content):
+    return {'name': name, 'data': base64.b64encode(content).decode('ascii')}
+
+
+@pytest.mark.parametrize('encoding', ['utf-8', 'utf-16', 'gb18030'])
+async def test_prompt_file_exact_bytes_decoding_no_model_or_history(setup, encoding):
+    app, web, service, upload, *_ = setup
+    service.store.set_prompt('原人设')
+    service.store.append(ADMIN, '之前的对话', '之前的回复')
+    content = '  新人设\r\n第二行\r\n  '
+    async with client_for(app) as client:
+        client.headers['X-Debug-Token'] = web.token
+        await client.post('/debug/chat', json={'text': '/setprompt'})
+        result = await client.post('/debug/chat', json={'files': [attachment('角色.MD', content.encode(encoding))]})
+        assert result.status_code == 200 and '已更新' in result.json()['reply']
+        assert not result.json()['prompt_pending']
+        assert service.store.prompt() == content
+        assert service.store.history(ADMIN)[0][1:] == ('之前的对话', '之前的回复')
+        assert not service.llm.complete.called
+
+
+async def test_images_without_qq_use_vision_and_keep_prompt_waiting(setup):
+    app, web, service, upload, _, bots = setup
+    png = io.BytesIO()
+    Image.new('RGB', (20, 20), 'blue').save(png, format='PNG')
+    service.llm.create = AsyncMock(return_value=SimpleNamespace(choices=[SimpleNamespace(
+        finish_reason='stop', message=SimpleNamespace(content='蓝色方块', reasoning_content='不要发送'))]))
+    media = Media(service.store, service.llm, service.config)
+    previous = web.runtime
+    web.runtime = lambda: (service, previous()[1], media, upload)
+    service.store.set_prompt('原人设')
+    try:
+        async with client_for(app) as client:
+            client.headers['X-Debug-Token'] = web.token
+            await client.post('/debug/chat', json={'text': '/setprompt'})
+            result = await client.post('/debug/chat', json={'text': '是什么颜色？',
+                'files': [attachment('a.png', png.getvalue()), attachment('b.png', png.getvalue())]})
+            assert result.status_code == 200 and result.json()['prompt_pending']
+            assert service.store.prompt() == '原人设' and not bots
+            vision = service.llm.create.call_args.kwargs
+            assert len(vision['messages'][1]['content']) == 3
+            assert vision['messages'][1]['content'][1]['image_url']['url'].startswith('data:image/jpeg;base64,')
+            assert '蓝色方块' in str(service.llm.complete.call_args.args[0])
+            assert '不要发送' not in result.json()['reply']
+            assert len(service.store.history(ADMIN)) == 1
+            assert '图片识别' in service.store.history(ADMIN)[0][1]
+    finally:
+        await media.close()
+
+
+async def test_text_attachment_chat_and_expired_prompt_does_not_replace(setup):
+    app, web, service, upload, *_ = setup
+    service.store.set_prompt('原人设')
+    async with client_for(app) as client:
+        client.headers['X-Debug-Token'] = web.token
+        await client.post('/debug/chat', json={'text': '/setprompt'})
+        upload.clock = lambda: 1e12
+        result = await client.post('/debug/chat', json={'text': '总结这个文件',
+            'files': [attachment('笔记.txt', '周末去公园'.encode())]})
+        assert result.status_code == 200 and not result.json()['prompt_pending']
+        assert service.store.prompt() == '原人设'
+        assert '周末去公园' in service.store.history(ADMIN)[0][1]
+        assert '结构化JSON协议' not in str(service.llm.complete.call_args)
+
+
+async def test_invalid_files_preserve_prompt_and_waiting(setup):
+    app, web, service, upload, *_ = setup
+    service.store.set_prompt('原人设')
+    async with client_for(app) as client:
+        client.headers['X-Debug-Token'] = web.token
+        await client.post('/debug/chat', json={'text': '/setprompt'})
+        for files in ([attachment('x.exe', b'bad')], [attachment('x.md', b'x' * (MAX_BYTES + 1))],
+                      [{'name': 'x.md', 'data': 'invalid base64!'}], [attachment('x.md', b'a')] * 2):
+            assert (await client.post('/debug/chat', json={'files': files})).status_code == 400
+        for content in (b'\0binary', b'   '):
+            reply = (await client.post('/debug/chat', json={'files': [attachment('x.md', content)]})).json()
+            assert reply['prompt_pending']
+        assert (await client.post('/debug/chat', json={'text': '/setprompt', 'files': [attachment('x.md', b'a')]})).status_code == 400
+        assert service.store.prompt() == '原人设' and not service.store.history(ADMIN)
         assert not service.llm.complete.called
