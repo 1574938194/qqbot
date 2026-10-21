@@ -13,6 +13,7 @@ from .profile import Profile
 from .media import Media
 from .prompt_upload import PromptUpload
 from .llm import ModelError
+from .web_chat import WebChat
 import logging
 
 service: Service | None = None
@@ -22,6 +23,7 @@ media: Media | None = None
 prompt_upload: PromptUpload | None = None
 matcher = on_message(priority=10, block=False)
 file_notice = on_notice(priority=10, block=False)
+web_chat = WebChat(get_driver().server_app, lambda: (service, profile, media, prompt_upload), get_bots)
 
 
 @get_driver().server_app.get('/health')

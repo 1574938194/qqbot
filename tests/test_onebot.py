@@ -11,6 +11,7 @@ import re
 import io
 import wave
 import base64
+import httpx
 import sqlite3
 from PIL import Image
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -260,6 +261,24 @@ async def test_reverse_websocket(tmp_path):
                 assert database.execute('SELECT count(*) FROM turns').fetchone()[0] == history_count
                 assert len(calls) == 5 and len(speech_calls) == 4
                 database.close()
+            # 真实 HTTP 网页入口不依赖 OneBot 在线，复用刚才 QQ 的上下文。
+            async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{port}', trust_env=False) as client:
+                page = await client.get('/debug')
+                assert page.status_code == 200
+                token = re.search(r"const token='([^']+)'", page.text).group(1)
+                client.headers['X-Debug-Token'] = token
+                state = (await client.get('/debug/state')).json()
+                assert len(state['history']) == history_count
+                response = await client.post('/debug/chat', json={'text': '网页链路测试秘密'})
+                assert response.status_code == 200
+                assert response.json()['reply'] == '[CQ:at,qq=123]最终正文' * 3
+                assert len(calls) == 6
+                state = (await client.get('/debug/state')).json()
+                assert state['history'][-1][0] == '网页链路测试秘密'
+                assert len(state['history']) == history_count + 1
+                await client.post('/debug/chat', json={'text': '/status'})
+                assert len(calls) == 6
+                assert len((await client.get('/debug/state')).json()['history']) == history_count + 1
         finally:
             process.terminate()
             process.wait(timeout=10)
@@ -268,3 +287,4 @@ async def test_reverse_websocket(tmp_path):
             thread.join(timeout=5)
     log = logfile.read_text(encoding='utf-8')
     assert '链路测试秘密' not in log and 'test-access' not in log and 'test-only' not in log
+    assert '网页链路测试秘密' not in log and token not in log

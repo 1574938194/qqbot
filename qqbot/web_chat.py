@@ -1,0 +1,146 @@
+"""仅供本机/SSH 转发的管理员文本调试入口，复用正在运行的 Service。"""
+import asyncio
+import base64
+import ipaddress
+import json
+import logging
+import secrets
+import time
+from types import SimpleNamespace
+from urllib.parse import urlsplit
+
+from fastapi import HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from nonebot.adapters.onebot.v11 import Message, MessageSegment
+
+from .config import ADMIN
+from .llm import ModelError
+from .prompt_upload import MAX_BYTES
+from .reply_wait import wait_reply
+from .web_page import PAGE
+
+WEB_BOT_ID = '99990008'  # 人设等待独立于 QQ；不用于任务投递。
+
+
+class WebChat:
+    def __init__(self, app, runtime, bots):
+        self.runtime, self.bots = runtime, bots
+        self.token = secrets.token_urlsafe(32)
+        self.lock = asyncio.Lock()
+        app.add_api_route('/debug', self.index, methods=['GET'], response_class=HTMLResponse)
+        app.add_api_route('/debug/state', self.state, methods=['GET'])
+        app.add_api_route('/debug/chat', self.chat, methods=['POST'])
+
+    def guard(self, request, *, api=True):
+        try:
+            local = ipaddress.ip_address(request.client.host).is_loopback
+            host = urlsplit('http://' + request.headers.get('host', '')).hostname
+            valid_host = host == 'localhost' or ipaddress.ip_address(host).is_loopback
+        except (ValueError, TypeError, AttributeError):
+            local = valid_host = False
+        if not local or not valid_host:
+            raise HTTPException(403, '仅限本机或 SSH 转发访问。')
+        origin = request.headers.get('origin')
+        expected = str(request.base_url).rstrip('/')
+        if request.headers.get('sec-fetch-site') == 'cross-site' or (origin and origin != expected):
+            raise HTTPException(403, '不允许跨站访问。')
+        supplied = request.headers.get('x-debug-token', '')
+        if api and (not supplied.isascii() or not secrets.compare_digest(supplied, self.token)):
+            raise HTTPException(403, '页面已失效，请刷新后重试。')
+        service, _, _, _ = self.runtime()
+        if api and service is None:
+            raise HTTPException(503, '机器人正在启动，请稍后刷新。')
+        return service
+
+    @staticmethod
+    def headers():
+        return {'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+                'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY'}
+
+    async def index(self, request: Request):
+        self.guard(request, api=False)
+        nonce = secrets.token_urlsafe(24)
+        headers = self.headers()
+        headers['Content-Security-Policy'] = (
+            f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
+            "connect-src 'self'; media-src data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+        return HTMLResponse(PAGE.replace('__NONCE__', nonce).replace('__TOKEN__', self.token), headers=headers)
+
+    async def state(self, request: Request):
+        service = self.guard(request)
+        rows = service.store.db.execute(
+            'SELECT user,assistant FROM (SELECT id,user,assistant FROM turns WHERE uid=? ORDER BY id DESC LIMIT 50) ORDER BY id',
+            (ADMIN,)).fetchall()
+        _, _, _, upload = self.runtime()
+        return JSONResponse({'name': service.store.identity().get('role_name', '小暖'),
+                             'model': service.config.model, 'uid': str(ADMIN),
+                             'qq_online': bool(self.bots()), 'history': rows,
+                             'prompt_pending': bool(upload and (upload.deadline(WEB_BOT_ID) or 0) > time.time())},
+                            headers=self.headers())
+
+    async def chat(self, request: Request):
+        service = self.guard(request)
+        if request.headers.get('content-type', '').split(';')[0].strip() != 'application/json':
+            raise HTTPException(415, '请发送 JSON 文本。')
+        raw = bytearray()
+        async for chunk in request.stream():
+            raw.extend(chunk)
+            if len(raw) > MAX_BYTES + 1024:
+                raise HTTPException(413, '输入过长，请缩短后重试。')
+        try:
+            data = json.loads(raw)
+            text = data['text']
+            if not isinstance(text, str) or not text.strip() or len(text.encode()) > MAX_BYTES:
+                raise ValueError()
+        except (ValueError, KeyError, TypeError, UnicodeError):
+            raise HTTPException(400, '请输入有效的文本。') from None
+        if self.lock.locked():
+            raise HTTPException(409, '网页上一条请求仍在处理中，请等待。')
+        async with self.lock:
+            try:
+                async with asyncio.timeout(max(service.config.chat_timeout, service.config.tts_timeout) + 30):
+                    result = await self.dispatch(service, text)
+            except TimeoutError:
+                result = {'reply': '本次请求超时，请先检查历史或 /task list，避免重复提交。', 'audio': []}
+            except Exception as exc:
+                logging.getLogger(__name__).warning('web chat failure: %s', type(exc).__name__)
+                result = {'reply': str(exc) if isinstance(exc, ModelError) else '请求失败，请稍后重试。', 'audio': []}
+        return JSONResponse(result, headers=self.headers())
+
+    async def dispatch(self, service, text):
+        _, profile, media, upload = self.runtime()
+        bots = self.bots()
+        live_bot = next(iter(bots.values())) if len(bots) == 1 else None
+
+        async def call_api(name, **kwargs):
+            if live_bot is None:
+                raise RuntimeError('QQ 未连接。')
+            return await live_bot.call_api(name, **kwargs)
+
+        bot = SimpleNamespace(self_id=WEB_BOT_ID, call_api=call_api)
+        message = Message(MessageSegment.text(text))
+        event = SimpleNamespace(message_type='private', user_id=ADMIN, message=message,
+                                get_plaintext=message.extract_plain_text)
+        reply = await upload.message(bot, event) if upload else None
+        command = text.strip().split(maxsplit=1)[0].lower()
+        if reply is None and command == '/avatar':
+            reply = '网页只支持文本调试；请在 QQ 使用 /avatar 并发送图片。'
+        if reply is None and profile:
+            reply = await profile.handle(bot, event)
+        audio = []
+        if reply is None and media and command in ('/say', '/voice', '/speaker'):
+            result = await media.command(ADMIN, text)
+            if isinstance(result, bytes):
+                audio.append(base64.b64encode(result).decode('ascii'))
+                reply = '语音已生成。'
+            else:
+                reply = result or '命令已处理。'
+        if reply is None:
+            notices = []
+
+            async def notify(value):
+                notices.append(value)
+
+            # 实际 QQ bot_id 保证显式创建的任务仍可向 QQ 投递；离线也能普通聊天。
+            reply = await wait_reply(service, ADMIN, text, int(live_bot.self_id) if live_bot else None, notify)
+        return {'reply': str(reply or '未返回文本。'), 'audio': audio}
