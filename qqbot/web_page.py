@@ -4,27 +4,28 @@ PAGE = r'''<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QQ Bot · 对话调试</title><style nonce="__NONCE__">
 :root{font:15px/1.6 system-ui,"Microsoft YaHei",sans-serif;color:#24303d;background:#f3f5f8;color-scheme:light}
-*{box-sizing:border-box}body{margin:0}main{max-width:900px;height:100dvh;margin:auto;display:flex;flex-direction:column;padding:24px 20px 16px}
-header{display:flex;justify-content:space-between;align-items:center;gap:12px}h1{font-size:21px;margin:0}#status{font-size:13px;color:#65758a}
-.note{font-size:13px;color:#65758a;margin:8px 0 16px}.note strong{color:#a25a26}#messages{flex:1;overflow-y:auto;padding:8px 0;min-height:100px}
+*{box-sizing:border-box}body{margin:0}main{max-width:1480px;height:100dvh;margin:auto;display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:12px 20px}
+.sidebar{min-height:0;overflow-y:auto;border-right:1px solid #dfe5ed;padding:8px 18px 8px 0}.sidebar h2{font-size:12px;font-weight:600;color:#7b8797;margin:0 0 8px}.sidebar h2:not(:first-child){margin-top:22px}.chat{min-width:0;min-height:0;display:flex;flex-direction:column}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:4px 0 10px;border-bottom:1px solid #e1e6ed}h1{font-size:20px;margin:0}#status{font-size:12px;color:#65758a}
+.note{font-size:12px;color:#65758a;margin:8px 0}.note strong{color:#a25a26}.guide{font-size:12px;color:#65758a;margin-top:22px}.guide summary{cursor:pointer}#messages{flex:1;overflow-y:auto;padding:20px 0 8px;min-height:0;overscroll-behavior:contain}
 .row{display:flex;flex-direction:column;align-items:flex-start;margin:0 0 18px}.row.user{align-items:flex-end}.label{font-size:12px;color:#7b8797;margin:0 6px 4px}
 .bubble{max-width:88%;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 16px;border-radius:16px;background:white;border:1px solid #e4e9ef}
-.user .bubble{background:#e4edff;border-color:#d9e4fa}.system .bubble{color:#895d30;background:#fff8ee}.toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.user .bubble{background:#e4edff;border-color:#d9e4fa}.system .bubble{color:#895d30;background:#fff8ee}.toolbar{display:flex;flex-direction:column;gap:8px}.toolbar button{text-align:left;width:100%}
 button{font:inherit;border:1px solid #d5dce6;background:white;color:#3d536d;border-radius:9px;padding:6px 12px;cursor:pointer}button:hover{background:#eaf0f9}button:disabled{opacity:.5;cursor:wait}
-form{display:flex;gap:10px;align-items:flex-end}textarea{resize:vertical;min-height:80px;max-height:240px;flex:1;min-width:0;border:1px solid #d5dce6;border-radius:12px;padding:12px;font:inherit;background:white;color:inherit}
+form{display:flex;gap:10px;align-items:flex-end;padding-top:8px}textarea{resize:vertical;height:60px;min-height:56px;max-height:180px;flex:1;min-width:0;border:1px solid #d5dce6;border-radius:12px;padding:10px 12px;font:inherit;background:white;color:inherit}
 textarea:focus{outline:2px solid #95b6ef;border-color:transparent}#send{background:#426bd5;color:white;border:0;height:44px;padding:0 20px}#progress{min-height:24px;font-size:12px;color:#65758a;margin-top:6px}audio{max-width:100%;display:block;margin-top:8px}
-#attachments{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0}.attachment{display:flex;align-items:center;gap:6px;background:white;border:1px solid #d5dce6;border-radius:9px;padding:4px 8px;font-size:12px}.attachment img{width:52px;height:52px;object-fit:cover;border-radius:5px}#prompt-state{font-size:13px;color:#995321;margin-bottom:6px}input[type=file]{display:none}
-@media(max-width:600px){main{padding:16px 12px 8px}.bubble{max-width:94%}header{align-items:flex-start;flex-direction:column;gap:0}#send{padding:0 12px}}
+#attachments{display:flex;gap:8px;flex-direction:column;margin:10px 0}.attachment{display:flex;align-items:center;gap:6px;min-width:0;background:white;border:1px solid #d5dce6;border-radius:9px;padding:4px 8px;font-size:12px}.attachment span{overflow-wrap:anywhere;min-width:0}.attachment img{width:44px;height:44px;object-fit:cover;border-radius:5px;flex-shrink:0}#prompt-state{font-size:12px;color:#995321;margin-top:10px}input[type=file]{display:none}
+@media(max-width:700px){main{grid-template-columns:116px minmax(0,1fr);gap:12px;padding:8px 10px}.sidebar{padding-right:10px}.toolbar button{font-size:12px;padding:7px 8px}.bubble{max-width:96%;padding:10px 12px}header{align-items:flex-start;flex-direction:column;gap:0}h1{font-size:17px}#send{padding:0 10px}textarea{font-size:14px}.attachment{flex-direction:column;align-items:flex-start}.attachment img{width:40px;height:40px}}
 </style></head><body><main>
-<header><h1 id="title">QQ Bot · 对话调试</h1><span id="status">正在连接…</span></header>
-<p class="note">使用管理员 QQ <b>1574938194</b> 的同一份上下文。普通对话会保存；命令及命令回复不记入聊天历史。<br>
-仅 <b>/tool</b> 调用工具；提醒和后台任务通知仍发送到 QQ。支持图片识别、txt/md 文本附件与 <b>/say</b> 试听。<b>/setprompt</b> 后单独上传 txt/md 文件，会将原文设为统一人设。</p>
-<div id="messages" role="log" aria-live="polite"></div>
+<aside class="sidebar" aria-label="聊天功能"><h2>对话管理</h2>
 <div class="toolbar"><button type="button" data-command="/help">帮助</button><button type="button" data-command="/status">上下文状态</button><button type="button" data-command="/compress">压缩</button><button type="button" data-command="/setprompt">设置人设</button><button type="button" data-command="/setprompt cancel">取消人设等待</button><button type="button" id="refresh">刷新历史</button></div>
-<div id="prompt-state" role="status"></div><div class="toolbar"><button type="button" id="choose-image">添加图片</button><button type="button" id="choose-file">添加 txt/md</button><button type="button" id="clear-files">移除附件</button></div><input id="image-files" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple><input id="text-file" type="file" accept=".txt,.md"><div id="attachments"></div>
+<div id="prompt-state" role="status"></div><h2>附件</h2><div class="toolbar"><button type="button" id="choose-image">添加图片</button><button type="button" id="choose-file">添加 txt/md</button><button type="button" id="clear-files">移除附件</button></div><input id="image-files" type="file" accept=".jpg,.jpeg,.png,.webp,.gif" multiple><input id="text-file" type="file" accept=".txt,.md"><div id="attachments"></div>
+<details class="guide"><summary>使用说明</summary><p class="note">使用管理员 QQ <b>1574938194</b> 的同一份上下文。普通对话会保存；命令及命令回复不记入聊天历史。<br>仅 <b>/tool</b> 调用工具；提醒和后台任务通知仍发送到 QQ。支持图片识别、txt/md 文本附件与 <b>/say</b> 试听。<b>/setprompt</b> 后单独上传 txt/md 文件，会将原文设为统一人设。</p></details></aside>
+<section class="chat" aria-label="对话"><header><h1 id="title">QQ Bot · 对话调试</h1><span id="status">正在连接…</span></header>
+<div id="messages" role="log" aria-live="polite"></div>
 <form id="form"><textarea id="input" placeholder="输入消息，或 /help 查看命令。Enter 发送，Shift+Enter 换行。" aria-label="消息"></textarea><button id="send">发送</button></form>
 <div id="progress" role="status">历史显示最近 50 轮；刷新页面后，临时命令结果不保留。</div>
-</main><script nonce="__NONCE__">
+</section></main><script nonce="__NONCE__">
 const token='__TOKEN__', box=document.getElementById('messages'), input=document.getElementById('input'), progress=document.getElementById('progress');
 let busy=false,name='机器人',selected=[],previewURLs=[];
 function promptState(active){document.getElementById('prompt-state').textContent=active?'正在等待人设：5 分钟内下一条文本或 txt/md 原文将替换 system prompt。图片不会消耗等待。':''}
