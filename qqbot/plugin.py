@@ -1,7 +1,7 @@
-from nonebot import get_bots, get_driver, on_message
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment
+from nonebot import get_bots, get_driver, on_message, on_notice
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment, NoticeEvent
 
-from .config import Settings
+from .config import Settings, ADMIN
 from .llm import LLM
 from .service import Service, ChatReply
 from .store import Store
@@ -11,6 +11,7 @@ from .process_lock import ProcessLock
 from .reply_wait import wait_reply
 from .profile import Profile
 from .media import Media
+from .prompt_upload import PromptUpload
 from .llm import ModelError
 import logging
 
@@ -18,7 +19,9 @@ service: Service | None = None
 process_lock: ProcessLock | None = None
 profile: Profile | None = None
 media: Media | None = None
+prompt_upload: PromptUpload | None = None
 matcher = on_message(priority=10, block=False)
+file_notice = on_notice(priority=10, block=False)
 
 
 @get_driver().server_app.get('/health')
@@ -37,11 +40,12 @@ async def task_sender(uid, text, bot_id):
 
 @get_driver().on_startup
 async def startup():
-    global service, process_lock, profile, media
+    global service, process_lock, profile, media, prompt_upload
     config = Settings.load()
     process_lock = ProcessLock(config.db_path)
     llm = LLM(config)
     store = Store(config.db_path)
+    prompt_upload = PromptUpload(store, config.context_tokens)
     profile = Profile(store)
     media = Media(store, llm, config)
     tasks = Tasks(store, llm, config, sender=task_sender) if config.tasks_enabled else None
@@ -70,12 +74,14 @@ async def receive(bot: Bot, event: MessageEvent):
         return
     if not service.store.allowed(event.user_id):
         return
-    profile_reply = await profile.handle(bot, event) if profile else None
+    profile_reply = await prompt_upload.message(bot, event) if prompt_upload else None
+    if profile_reply is None:
+        profile_reply = await profile.handle(bot, event) if profile else None
     if profile_reply is not None:
         for start in range(0, len(profile_reply), service.config.message_chars):
             await bot.send_private_msg(user_id=event.user_id, message=Message(MessageSegment.text(profile_reply[start:start + service.config.message_chars])))
         return
-    # 头像等待优先；其余支持文本与图片，暂不接收语音等其他输入类型。
+    # 人设/头像接收优先；其余聊天支持文本与图片，暂不接收语音等其他输入类型。
     if any(segment.type not in ('text', 'image') for segment in event.message):
         return
     if not service.store.allowed(event.user_id):
@@ -118,3 +124,13 @@ async def receive(bot: Bot, event: MessageEvent):
                 if mode == 'on':
                     await notify(reply)
                 await notify('语音生成或发送失败，已保留文字回复。可用 /voice off 关闭语音。')
+
+
+@file_notice.handle()
+async def receive_prompt_file(bot: Bot, event: NoticeEvent):
+    if not service or not prompt_upload:
+        return
+    reply = await prompt_upload.notice(bot, event)
+    if reply:
+        for start in range(0, len(reply), service.config.message_chars):
+            await bot.send_private_msg(user_id=ADMIN, message=Message(MessageSegment.text(reply[start:start + service.config.message_chars])))

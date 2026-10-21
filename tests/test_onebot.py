@@ -10,6 +10,8 @@ import threading
 import re
 import io
 import wave
+import base64
+import sqlite3
 from PIL import Image
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -224,6 +226,40 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(event(ADMIN, '/tool 显式工具测试'))
                 assert await receive_segment() == '工具处理完成。'
                 assert len(calls) == 5
+                database = sqlite3.connect(tmp_path / 'ws.db')
+                history_count = database.execute('SELECT count(*) FROM turns').fetchone()[0]
+                async def prompt_command():
+                    await ws.send(event(ADMIN, '/setprompt'))
+                    acknowledgment = ''
+                    while not acknowledgment.endswith('/setprompt cancel。'):
+                        acknowledgment += await receive_segment()
+                async def prompt_done():
+                    acknowledgment = ''
+                    while not acknowledgment.endswith('本次等待已结束。'):
+                        acknowledgment += await receive_segment()
+                    assert '已更新' in acknowledgment
+                await prompt_command()
+                exact_prompt = '  测试统一人设\r\n第二行  '
+                await ws.send(event(ADMIN, exact_prompt))
+                await prompt_done()
+                assert database.execute("SELECT value FROM settings WHERE key='prompt'").fetchone()[0] == exact_prompt
+                await prompt_command()
+                await ws.send(json.dumps({'time': 1, 'self_id': 99999, 'post_type': 'notice',
+                    'notice_type': 'offline_file', 'user_id': ADMIN,
+                    'file': {'id': 'prompt-file-id', 'name': '人物.md', 'size': 20}}))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                assert action['action'] == 'get_private_file_url'
+                await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
+                action = json.loads(await asyncio.wait_for(ws.recv(), 15))
+                assert action['action'] == 'get_file'
+                exact_file = '文件原文\r\n第二行\r\n'
+                await ws.send(json.dumps({'status': 'ok', 'retcode': 0,
+                    'data': {'base64': base64.b64encode(exact_file.encode()).decode()}, 'echo': action['echo']}))
+                await prompt_done()
+                assert database.execute("SELECT value FROM settings WHERE key='prompt'").fetchone()[0] == exact_file
+                assert database.execute('SELECT count(*) FROM turns').fetchone()[0] == history_count
+                assert len(calls) == 5 and len(speech_calls) == 4
+                database.close()
         finally:
             process.terminate()
             process.wait(timeout=10)

@@ -83,6 +83,8 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 /whitelist list
 /whitelist add QQ号
 /whitelist remove QQ号
+/setprompt
+/setprompt cancel
 /prompt show
 /prompt set 统一人设正文（支持多行）
 /prompt reset
@@ -93,6 +95,8 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 /tools shell on
 /tools shell off
 ```
+
+管理员发送 `/setprompt` 后，5分钟内的下一条非命令私聊文本，或第一个 `.txt` / `.md` 文件，会原样替换统一 system prompt，下轮对话生效。支持多行与原换行，文件上限512KB，并受上下文长度限制；UTF-8、带BOM的UTF-16、GB18030文件可用。失败保留旧人设和剩余等待时间；`/setprompt cancel` 取消。其他账号、群文件不会消耗等待；人设提交与确认不会进入聊天历史或调用模型，名字和昵称仍由 `/setname`、`/setnickname` 单独设置。
 
 `/avatar` 后5分钟内收到的管理员第一张私聊图片用于设置头像；超时/取消后恢复普通识图。`/setname` 设置正式角色名，`/setnickname` 同步 QQ 昵称及角色昵称，身份独立保存，不改写原始人设文件。`/name`、`/nickname` 是昵称命令的兼容别名。
 
@@ -124,7 +128,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-104项机器人自动测试已通过，另有14项 ONNX 停顿、语义和采样测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
+111项机器人自动测试已通过，另有14项 ONNX 停顿、语义和采样测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音和模拟 OneBot 收发。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
 
 以下脚本显式调用真实服务，使用测试输入和临时数据库，不向 QQ 发送消息：
 

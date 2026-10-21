@@ -9,9 +9,10 @@ from .emotion import advance, decay, describe, hint
 from .profile import PROFILE_HELP
 from .media import MEDIA_HELP
 from .checkin import checkin, pool
+from .prompt_upload import PROMPT_UPLOAD_HELP
 
 HELP = "/help 或 /帮助\n/status 或 /状态\n/compress 或 /压缩\n/reset 或 /清空\n/emotion 或 /情绪\n/memory status\n/memory sync\n/memory clear" + MEDIA_HELP
-ADMIN_HELP = "\n/whitelist list\n/whitelist add QQ号\n/whitelist remove QQ号\n/prompt show\n/prompt set 内容（支持多行）\n/prompt reset" + PROFILE_HELP
+ADMIN_HELP = "\n/whitelist list\n/whitelist add QQ号\n/whitelist remove QQ号\n/prompt show\n/prompt set 内容（支持多行）\n/prompt reset" + PROFILE_HELP + PROMPT_UPLOAD_HELP
 
 
 def estimate(text):
