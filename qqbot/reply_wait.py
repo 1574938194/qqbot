@@ -15,7 +15,7 @@ async def wait_reply(service, uid, text, self_id, notify, *, prepare=None):
         done, _ = await asyncio.wait({pending}, timeout=service.config.chat_notice_seconds)
         if not done and service.store.allowed(uid):
             try:
-                await asyncio.wait_for(notify('正在等待 buddyproxy 号池操作结果。' if managing_pool else '正在等待 buddyproxy 签到结果。' if signing_in else '收到，正在处理。执行中的任务可发送 /stop 停止。' if getattr(service, 'qwen', None) else '收到啦，模型响应有点慢，我还在等。'),
+                await asyncio.wait_for(notify('正在等待 buddyproxy 号池操作结果。' if managing_pool else '正在等待 buddyproxy 签到结果。' if signing_in else '收到，正在处理。执行中的任务可发送 /task stop 停止。' if getattr(service, 'qwen', None) else '收到啦，模型响应有点慢，我还在等。'),
                                        max(.001, min(5, deadline - asyncio.get_running_loop().time())))
             except Exception:
                 # 提示发送失败不丢弃仍在处理的最终请求。

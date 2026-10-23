@@ -41,3 +41,15 @@ async def test_fast_reply_silent_and_cancelled_caller():
     request.cancel()
     await asyncio.gather(request, return_exceptions=True)
     assert stopped.is_set()
+
+async def test_qwen_notice_uses_current_stop_command():
+    async def handle(*args, **kwargs):
+        await asyncio.sleep(.03)
+        return '任务完成'
+    service = SimpleNamespace(handle=handle, qwen=object(), store=SimpleNamespace(allowed=lambda uid: True),
+                              config=SimpleNamespace(chat_notice_seconds=.001, chat_timeout=1, qwenpaw_timeout=1))
+    notices = []
+    async def notify(text):
+        notices.append(text)
+    assert await wait_reply(service, 1, '开发计算器', 2, notify) == '任务完成'
+    assert len(notices) == 1 and '/task stop' in notices[0] and '/stop' not in notices[0]
