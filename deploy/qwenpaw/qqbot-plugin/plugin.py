@@ -21,7 +21,7 @@ lock = asyncio.Lock()
 
 POLICY = '''你是通过 QQ 和网页为用户服务的持续 AI 助手。闲聊自然简洁，遵循独立人设与当前身份资料。
 用户明确要求检索资料、浏览网页、操作文件、编程或多步执行时，自动使用 delegate_external_agent，
-runner 只能选择 deepseek_harness，由真正的 DeepSeek Harness 完成工作。不要要求用户加 /tool。
+runner 只能选择 deepseek_harness，由真正的 DeepSeek Harness 完成工作。明确任务无需额外命令前缀。
 同一任务的后续修改使用 action=message 继续已有 DSH 会话；新任务才用 start，失败要如实说明。
 用户只是倾诉、询问你的名字或聊天时直接回应，不调用执行器。拿不准任务范围时先问一个简短问题。
 不向用户发送思考、reasoning_content、工具 JSON、内部角色键名或伪造的成功结果。
@@ -78,7 +78,7 @@ async def sync(request: Request):
         raise HTTPException(409, '工作区路径异常。')
     execute = uid == ADMIN and data.get('execute') is True
     external_memory = data.get('external_memory') is True
-    fingerprint = hashlib.sha256(json.dumps(['gateway-v3', prompt, identity, execute, external_memory], ensure_ascii=False).encode()).hexdigest()
+    fingerprint = hashlib.sha256(json.dumps(['gateway-v4-autonomy', prompt, identity, execute, external_memory], ensure_ascii=False).encode()).hexdigest()
     async with lock:
         manager = request.app.state.multi_agent_manager
         marker = workspace / '.qqbot-sync'
@@ -177,6 +177,13 @@ class QQGatewayChannel(BaseChannel):
 
 class Plugin:
     def register(self, api):
+        import importlib.util
+        import sys
+        spec = importlib.util.spec_from_file_location(__name__ + '_autonomy', Path(__file__).with_name('autonomy.py'))
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        module.register_autonomy(api)
         # Console 默认把聊天打印到 stdout；保留网页 SSE，关闭原文日志。
         ConsoleChannel._safe_print = lambda self, text: None
         api.register_channel(QQGatewayChannel, label='QQBot', description='通过现有 NapCat/NoneBot 投递结果')
