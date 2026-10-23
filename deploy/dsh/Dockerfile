@@ -19,4 +19,5 @@ WORKDIR /opt/dsh-service
 USER agent
 ENV HOME=/home/agent PYTHONUNBUFFERED=1
 ENTRYPOINT ["/usr/bin/tini", "--"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD python -c "import json,urllib.request; r=json.load(urllib.request.urlopen('http://127.0.0.1:32128/health',timeout=3)); assert r['status']=='ready'"
 CMD ["python", "server.py"]
