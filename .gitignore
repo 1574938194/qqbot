@@ -27,3 +27,4 @@ __pycache__/
 /deploy/gpt-sovits/assets/
 /deploy/onnx-speech/source/
 /deploy/onnx-speech/assets/
+/proxy.txt
