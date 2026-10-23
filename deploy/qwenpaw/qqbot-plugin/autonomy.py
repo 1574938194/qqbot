@@ -29,7 +29,7 @@ def message_text(messages):
 def coding_request(text):
     if text.lstrip().startswith('/') or re.search(r'只(?:需|要).{0,12}(?:解释|示例|方案)|不要(?:执行|写代码)|需要(?:多久|什么)|(?:如何|怎么|为什么).{0,12}(?:开发|编写)', text):
         return False
-    action = re.search(r'^(?:(?:请|帮我|给我|麻烦|直接|现在|继续|你来)[，,\s]*)?(?:开发|编写|实现|修复|重构|改进|搭建|写(?:一个|个|一段)|做(?:一个|个))|(?:请|帮我|给我|麻烦).{0,40}(?:开发|编写|实现|修复|重构|改进)|^(?:(?:please|can you|could you)\s+)?(?:build|implement|develop|fix|refactor|create)\b', text.strip(), re.I)
+    action = re.search(r'^(?:(?:请|帮我|给我|麻烦|直接|现在|继续|你来)[，,\s]*)?(?:开发|编写|实现|修复|重构|改进|搭建|创建|制作|写(?:一个|个|一段)|做(?:一个|个))|(?:请|帮我|给我|麻烦).{0,40}(?:开发|编写|实现|修复|重构|改进|创建|制作)|^(?:(?:please|can you|could you)\s+)?(?:build|implement|develop|fix|refactor|create)\b', text.strip(), re.I)
     subject = re.search(r'代码|程序|项目|脚本|计算器|网页|网站|应用|软件|\b(?:cli|app|api|code|script|calculator|program|website)\b', text, re.I)
     return bool(action and subject)
 
@@ -195,7 +195,7 @@ def register_autonomy(api):
         phase, name, priority = Phase.PRE_AGENT_BUILD, 'qqbot_autonomy_prepare', 85
 
         async def run(self, ctx):
-            if ctx.agent_id != 'qq-1574938194' or str(value(ctx.request, 'user_id', '')) != '1574938194':
+            if (ctx.agent_id != 'qq-1574938194' and not re.fullmatch(r'qq-1574938194-task-[a-f0-9]{12}', ctx.agent_id)) or str(value(ctx.request, 'user_id', '')) != '1574938194':
                 return HookResult()
             config = ctx.agent_config or load_agent_config(ctx.agent_id)
             runner = config.acp.agents.get('deepseek_harness')

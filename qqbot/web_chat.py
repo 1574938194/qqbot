@@ -36,6 +36,51 @@ class WebChat:
         app.add_api_route('/debug', self.index, methods=['GET'], response_class=HTMLResponse)
         app.add_api_route('/debug/state', self.state, methods=['GET'])
         app.add_api_route('/debug/chat', self.chat, methods=['POST'])
+        app.add_api_route('/debug/tasks', self.task_list, methods=['GET'])
+        app.add_api_route('/debug/task-file', self.task_file, methods=['GET'])
+
+    async def task_list(self, request: Request):
+        service = self.guard(request)
+        tasks = service.tasks
+        if not tasks:
+            return JSONResponse({'tasks': []}, headers=self.headers())
+        tasks.cleanup()
+        result = []
+        for task in tasks.repo.list(ADMIN, include_finished=True):
+            run = tasks.repo.latest_run(task['id'])
+            item = {key: task[key] for key in ('id', 'kind', 'state', 'instruction', 'created_at', 'updated_at')}
+            item['instruction'] = item['instruction'][:1000]
+            item.update(result=run['result'] if run else '', error=run['error'] if run else '',
+                stages=tasks.repo.stages(run['id']) if run else [], outputs=[])
+            item['delivery'] = ('delivered' if run['notified'] else 'pending') if run and run['state'] in ('succeeded', 'failed', 'paused', 'waiting_input') else 'processing'
+            if run:
+                from urllib.parse import urlsplit, unquote
+                for index, part in enumerate(tasks.repo.outputs(run['id'])):
+                    source = part.get('file_url') or part.get('image_url') or part.get('data', '')
+                    name = part.get('filename') or Path(unquote(urlsplit(source).path)).name or '附件'
+                    item['outputs'].append({'index': index, 'name': str(name)[:150], 'run_id': run['id']})
+            result.append(item)
+        return JSONResponse({'tasks': result}, headers=self.headers())
+
+    async def task_file(self, request: Request):
+        service = self.guard(request)
+        tasks = service.tasks
+        task = tasks.repo.get(ADMIN, request.query_params.get('id', '')) if tasks else None
+        run = tasks.repo.latest_run(task['id']) if task else None
+        if not run or run['id'] != request.query_params.get('run'):
+            raise HTTPException(404, '任务或成果版本不存在。')
+        try:
+            index = int(request.query_params.get('index', '-1'))
+            parts = tasks.repo.outputs(run['id'])
+            if not 0 <= index < len(parts):
+                raise ValueError()
+            files = await collect_qwen_files(ADMIN, [parts[index]], service.config)
+            if not files:
+                raise ValueError()
+        except (ValueError, ModelError):
+            raise HTTPException(404, '附件不存在、过大或无法读取。') from None
+        file = files[0]
+        return JSONResponse({'name': file['name'], 'data': base64.b64encode(file['data']).decode('ascii')}, headers=self.headers())
 
     def guard(self, request, *, api=True):
         try:

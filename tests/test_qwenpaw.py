@@ -185,3 +185,17 @@ async def test_artifact_file_scope_and_size(tmp_path):
 def test_qwenpaw_endpoint_is_loopback_only(url):
     with pytest.raises(ValueError, match='QWENPAW_BASE_URL'):
         Settings(qwenpaw_base_url=url)
+
+async def test_background_task_client_has_isolated_agent_and_no_companion_history(setup):
+    service, calls, _ = setup
+    service.store.append(ADMIN, 'private companion detail', 'private response')
+    tid = 'abcdef123456'
+    reply = await service.qwen.chat(ADMIN, 'create a CLI project', task_id=tid)
+    assert reply
+    sync = next(c[1] for c in calls if c[0] == 'sync')
+    assert sync['task_id'] == tid and sync['prompt'] == '' and sync['identity'] == {}
+    assert 'history' not in sync
+    chat = next(c for c in calls if c[0] == 'chat')
+    assert chat[1] == 'qq-' + str(ADMIN) + '-task-' + tid
+    assert chat[2]['session_id'] == 'task-' + tid
+    assert 'private companion detail' not in json.dumps(chat)

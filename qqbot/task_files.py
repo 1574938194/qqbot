@@ -13,6 +13,7 @@ class TaskFiles:
     def __init__(self, repo, config):
         self.repo = repo
         self.root = Path(config.task_workspace).resolve()
+        self.qwen_root = Path(config.qwenpaw_files).resolve()
 
     def shell_enabled(self):
         row = self.repo.db.execute("SELECT value FROM settings WHERE key='task_shell_enabled'").fetchone()
@@ -27,10 +28,18 @@ class TaskFiles:
     def directory(self, uid, task_id):
         if not re.fullmatch(r'[a-f0-9]{12}', task_id):
             raise ToolError('无效任务目录。')
-        path = self.root / str(uid) / task_id
-        if not path.resolve().is_relative_to(self.root):
+        task = self.repo.get(uid, task_id)
+        root = self.root
+        path = root / str(uid) / task_id
+        if task and task['kind'] == 'qwen':
+            root = self.qwen_root / 'qwenpaw/workspaces' / ('qq-' + str(uid))
+            if not root.resolve().is_relative_to(self.qwen_root):
+                raise ToolError('工作区目录越界。')
+            path = root / 'files/.tasks' / task_id / 'files'
+        if not path.resolve().is_relative_to(root.resolve()):
             raise ToolError('任务目录越界。')
-        path.mkdir(parents=True, exist_ok=True)
+        if not task or task['kind'] != 'qwen':
+            path.mkdir(parents=True, exist_ok=True)
         return path.resolve()
 
     async def execute(self, uid, task_id, name, arguments):

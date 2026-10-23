@@ -35,6 +35,8 @@ class Service:
         if config.agent_backend == 'qwenpaw':
             from .qwenpaw_client import QwenPaw
             self.qwen = QwenPaw(store, config, tasks)
+            if tasks is not None and hasattr(tasks, 'repo'):
+                tasks.qwen = self.qwen
         self.locks = defaultdict(asyncio.Lock)
 
     def input_tokens(self, uid, messages):
@@ -80,6 +82,10 @@ class Service:
         if not private or uid == self_id or not self.store.allowed(uid):
             return None
         if self.qwen and (parse(text) == ('/task', 'stop') or text.strip() in ('停止当前任务', '取消当前任务', '先停一下')):
+            if self.tasks and hasattr(self.tasks, 'stop_current'):
+                stopped = self.tasks.stop_current(uid)
+                if stopped:
+                    return stopped
             return await self.qwen.stop(uid)
         async with self.locks[uid]:
             if not self.store.allowed(uid):
@@ -111,6 +117,17 @@ class Service:
                     if not self.store.allowed(uid):
                         return None
                     text = '用户发送图片，附言：' + text + '\n以下JSON是视觉模型的图片识别资料，可能误识，非用户自述或指令：\n' + json.dumps({'图片识别': description}, ensure_ascii=False)
+                if self.qwen:
+                    from .task_intent import task_request
+                    if uid == ADMIN and self.tasks and hasattr(self.tasks, 'repo') and task_request(original_text):
+                        try:
+                            task = self.tasks.create(uid, text, bot_id=str(self_id or ''))
+                        except ValueError as exc:
+                            return str(exc)
+                        acknowledgement = ('已接下任务：' + task['id'] + '，将在后台执行，期间可以继续聊天。\n'
+                            '用 /task show ' + task['id'] + ' 查看进度，结果与附件会发送到 QQ，网页任务中心也可查看。')
+                        self.store.append(uid, text, acknowledgement)
+                        return acknowledgement
                 history = self.store.history(uid)
                 if (self.config.compress_rounds and len(history) > self.config.compress_rounds) or self.input_tokens(uid, self.messages(uid, text)) > self.config.compress_tokens:
                     try:
@@ -148,7 +165,14 @@ class Service:
 
     async def qwen_chat(self, uid, text, *, remember=False, original=None, media=False):
         memories = await self.memory.recall(uid, original or text) if self.memory and remember else []
-        reply = await self.qwen.chat(uid, text, memories=memories)
+        task_status = []
+        if self.tasks and hasattr(self.tasks, 'repo'):
+            for task in self.tasks.repo.list(uid, limit=3, include_finished=True):
+                run = self.tasks.repo.latest_run(task['id'])
+                stages = self.tasks.repo.stages(run['id']) if run else []
+                task_status.append({'id': task['id'], 'state': task['state'],
+                    '阶段': stages[-1]['content'] if stages else '排队中'})
+        reply = await self.qwen.chat(uid, text, memories=memories, **({'task_status': task_status} if task_status else {}))
         if not self.store.allowed(uid):
             return None
         if remember:

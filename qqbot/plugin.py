@@ -46,6 +46,9 @@ async def task_sender(uid, text, bot_id):
     bot = bots.get(bot_id) if bot_id else (next(iter(bots.values())) if len(bots) == 1 else None)
     if bot is None:
         raise RuntimeError('机器人未连接，等待重连后投递。')
+    if isinstance(text, dict):
+        await send_qwen_files(bot, uid, await collect_qwen_files(uid, [text], service.config))
+        return
     await bot.send_private_msg(user_id=uid, message=Message(MessageSegment.text(text)))
 
 

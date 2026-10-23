@@ -12,7 +12,7 @@ TASK_HELP = '''/task run 内容：创建独立后台任务
 /task files ID；/task file ID 路径：查看成果
 /task cancel|pause|resume|retry ID：管理任务
 /task reply ID 内容：补充信息
-/task stop：停止当前 QwenPaw 执行
+/task stop：停止当前后台任务或 QwenPaw 执行
 /task tools：查看执行能力
 /task shell on|off：管理员启停本机命令执行'''
 ADMIN_HELP = '/profile：名字、昵称和头像\n/prompt：统一人设与文件上传\n/whitelist list|add QQ号|remove QQ号：白名单\n/pool [cn|global]：查看或切换号池\n签到：当前号池签到'

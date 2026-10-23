@@ -27,7 +27,7 @@ docker run -d --name xiaoai-dsh --restart unless-stopped --network host \
 
 ## 能力与边界
 
-开启 `/task shell on` 后管理员使用 `/tool`。支持 bash/Python、读写文件、图片读取、Chromium 页面操作和公开 Git 仓库。浏览器无桌面界面；截图保存在任务目录。私有 GitHub、账号登录和其他 MCP 插件尚无凭据，不会自动借用桌面登录。可按上游 MCP 文档显式配置插件与专用环境变量，不能声称已连接未配置的服务。
+开启 `/task shell on` 后管理员使用 `/task run`。QwenPaw 模式的新任务由 QwenPaw 原生 ACP 执行；本服务保留给旧任务和 legacy 后端。支持 bash/Python、读写文件、图片读取、Chromium 页面操作和公开 Git 仓库。浏览器无桌面界面；截图保存在任务目录。私有 GitHub、账号登录和其他 MCP 插件尚无凭据，不会自动借用桌面登录。可按上游 MCP 文档显式配置插件与专用环境变量，不能声称已连接未配置的服务。
 
 默认禁用 DeepSeek 会话日志上传和插件库存上报，保留本地 state；不传陪伴人设与聊天历史。隔离容器为非 root，未挂载数据库或 Docker socket。任务 shell 仍能访问容器网络和模型凭据，勿执行不可信指令。`resume` 恢复会话，不保证恢复浏览器状态，也不能撤销副作用。
 

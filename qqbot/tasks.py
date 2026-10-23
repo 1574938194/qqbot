@@ -28,6 +28,7 @@ class Tasks:
         self.stopping = False
         self.notification_retry = {}
         self.next_cleanup = 0
+        self.qwen = None
 
     def create(self, uid, instruction, *, kind='agent', mode='now', when='', bot_id=''):
         from .service import estimate
@@ -39,6 +40,8 @@ class Tasks:
             raise ValueError('DSH 仅供管理员使用，请先用 /task shell on 启用。')
         if kind not in ('agent', 'reminder'):
             raise ValueError('任务类型必须为 agent 或 reminder。')
+        if kind == 'agent' and self.qwen:
+            kind = 'qwen'
         if self.repo.count_active(uid) >= self.config.task_max_per_user:
             raise ValueError('未结束任务数量已达上限，请先取消旧任务。')
         due, interval, daily = schedule(mode, when)
@@ -55,17 +58,33 @@ class Tasks:
         run = self.repo.latest_run(task_id)
         if run:
             text += f"\n最近执行：{run['id']} [{run['state']}]；模型轮次：{run['iterations']}"
+            stages = self.repo.stages(run['id'])
+            if stages:
+                text += '\n阶段：' + stages[-1]['content']
             if steps:
+                text += '\n' + '\n'.join(s['content'] for s in stages)
                 text += '\n' + '\n'.join(f"{i+1}. {s['name']} [{s['state']}] {s['result'][:300]}" for i, s in enumerate(self.repo.steps(run['id'])))
             if run['result']: text += '\n结果：\n' + run['result']
             if run['error']: text += '\n说明：' + run['error']
         return text
 
     def control(self, uid, task_id, action):
+        previous = self.repo.get(uid, task_id)
+        if previous and previous['kind'] in ('qwen', 'agent') and action in ('resume', 'retry'):
+            if uid != ADMIN or not self.tools.shell_enabled():
+                raise ValueError('请先用 /task shell on 启用执行。')
         task = self.repo.control(uid, task_id, action)
         if action in ('cancel', 'pause') and task_id in self.running:
             self.running[task_id][1].cancel()
         return self.brief(task)
+
+    def stop_current(self, uid):
+        tasks = self.repo.list(uid)
+        current = next((t for t in tasks if t['state'] == 'running'), None)
+        if current is None:
+            return None
+        self.control(uid, current['id'], 'cancel')
+        return '已请求停止任务 ' + current['id'] + '；已产生的文件和外部操作保留。'
 
     def revoke(self, uid):
         for task in self.repo.rows("SELECT * FROM tasks WHERE uid=? AND state IN ('scheduled','running','paused','waiting_input')", (uid,)):
@@ -83,6 +102,9 @@ class Tasks:
                 if rest not in ('on', 'off'):
                     return '格式：/task shell on 或 /task shell off'
                 self.tools.set_shell(uid, rest == 'on')
+                if rest == 'off':
+                    for task in self.repo.rows("SELECT * FROM tasks WHERE kind IN ('agent','qwen') AND state IN ('scheduled','running')"):
+                        self.control(task['uid'], task['id'], 'cancel')
                 return '本机命令执行已' + ('启用（仅超级管理员任务）。' if rest == 'on' else '关闭。')
             if action == 'tools':
                 return 'Agent 后端：DeepSeek Harness（DSH）\n能力由 DSH 配置与插件管理。\nDSH 执行：' + ('已启用' if self.tools.shell_enabled() else '未启用') + '\n用法见 /help task。'
@@ -133,7 +155,7 @@ class Tasks:
             return '已创建任务：\n' + self.brief(task)
         except (ValueError, ToolError) as exc:
             return str(exc)
-        except OSError:
+        except (OSError, UnicodeError):
             return '任务文件读取失败，请检查文件是否存在。'
 
     def initial_messages(self, task):
@@ -149,6 +171,9 @@ class Tasks:
                     return
                 if uid != ADMIN or not self.tools.shell_enabled():
                     raise ModelError('DSH 未获管理员执行授权，请检查 /task shell on。')
+                if task['kind'] == 'qwen':
+                    await self.execute_qwen(task, run_id)
+                    return
                 # 单一有副作用的 DSH 步骤；进程中断时暂停，避免自动重复执行。
                 existing = self.repo.steps(run_id)
                 saved = json.loads(self.repo.run(run_id)['messages'])
@@ -180,6 +205,62 @@ class Tasks:
             logging.getLogger(__name__).warning('DSH task failure: %s', type(exc).__name__)
             self.repo.finish(task['id'], run_id, 'failed', error='DSH 内部错误，执行记录已保留。')
 
+    async def execute_qwen(self, task, run_id):
+        if not self.qwen:
+            raise ModelError('QwenPaw 任务服务未就绪。')
+        uid, tid = task['uid'], task['id']
+        saved = json.loads(self.repo.run(run_id)['messages'])
+        previous = self.repo.steps(run_id)
+        call_id = 'qwen-' + str(len(previous))
+        self.repo.plan(run_id, saved, [{'id': call_id, 'function': {'name': 'qwenpaw', 'arguments': '{}'}}], {'qwenpaw'})
+        self.repo.begin_tool(run_id, call_id)
+        self.repo.progress(run_id, '开始执行')
+        instruction = task['instruction']
+        additions = [m['content'] for m in saved if m.get('role') == 'user' and m.get('content', '').startswith('用户补充信息：')]
+        instruction += ('\n' + '\n'.join(additions)) if additions else ''
+        instruction += '\n在本任务独立工作区的 files 目录执行。先检查已有成果和执行记录，再完成剩余工作；外部操作结果不确定时先核实，不要直接重复。'
+        started = time.time()
+        watcher = asyncio.create_task(self.watch_progress(task, run_id, started))
+        try:
+            reply = await self.qwen.chat(uid, instruction, task_id=tid)
+            current = self.repo.get(uid, tid)
+            if not self.store.allowed(uid) or not current or current['state'] != 'running':
+                return
+            state = self.workflow_state(task, started)
+            if state and state['status'] != 'passed':
+                raise ModelError('自主验收尚未通过；文件已保留，请查看任务步骤。')
+            self.repo.save_outputs(run_id, reply.parts)
+            self.repo.tool_result(run_id, call_id, 'QwenPaw 执行结束', saved)
+            self.repo.progress(run_id, '执行完成，等待投递')
+            self.repo.finish(tid, run_id, 'succeeded', result=str(reply)[:self.config.task_result_chars])
+        finally:
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
+            await self.qwen.release_task(tid)
+
+    def workflow_state(self, task, started):
+        directory = self.qwen.task_workspace(task['uid'], task['id']) / 'files/.qqbot-workflows'
+        candidates = []
+        for path in directory.glob('*/state.json'):
+            if (path.resolve().is_relative_to(directory.resolve()) and not path.is_symlink()
+                    and path.stat().st_mtime >= started - 2 and path.stat().st_size <= 128 * 1024):
+                candidates.append(path)
+        if not candidates:
+            return None
+        data = json.loads(max(candidates, key=lambda p: p.stat().st_mtime).read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) else None
+
+    async def watch_progress(self, task, run_id, started):
+        labels = {'implementing': '开发中', 'reviewing': '独立验收中', 'passed': '验收通过', 'blocked': '验收未通过'}
+        while True:
+            try:
+                state = self.workflow_state(task, started)
+                if state and state.get('status') in labels:
+                    self.repo.progress(run_id, labels[state['status']])
+            except (OSError, ValueError, TypeError):
+                pass
+            await asyncio.sleep(2)
+
     async def notify(self):
         if not self.sender:
             return
@@ -191,6 +272,7 @@ class Tasks:
                 continue
             text = f"任务 {run['task_id']} [{run['state']}]\n" + (run['result'] or run['error'] or '执行已暂停。')
             parts = [text[i:i+self.config.message_chars] for i in range(0, len(text), self.config.message_chars)]
+            parts.extend(self.repo.outputs(run['id']))
             try:
                 for index in range(run['notify_index'], len(parts)):
                     if not self.store.allowed(run['uid']):
@@ -202,13 +284,40 @@ class Tasks:
             except Exception as exc:
                 logging.getLogger(__name__).warning('task notification failure: %s', type(exc).__name__)
                 self.notification_retry[run['id']] = time.time() + 30
+        await self.notify_progress()
+
+    async def notify_progress(self):
+        # 只投递每个运行的最新阶段，结束后不再补发旧进度。
+        for task in self.repo.rows("SELECT * FROM tasks WHERE state='running'"):
+            if not self.store.allowed(task['uid']):
+                continue
+            run = self.repo.latest_run(task['id'])
+            stages = self.repo.stages(run['id']) if run else []
+            if not stages:
+                continue
+            latest = stages[-1]
+            key = 'task-progress-' + run['id']
+            row = self.repo.db.execute('SELECT value FROM settings WHERE key=?', (key,)).fetchone()
+            if row and int(row[0]) >= latest['id']:
+                continue
+            if self.notification_retry.get(key, 0) > time.time():
+                continue
+            try:
+                async with asyncio.timeout(15):
+                    await self.sender(task['uid'], '任务 ' + task['id'] + '：' + latest['content'], task['bot_id'])
+                with self.repo.db:
+                    self.repo.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (key, str(latest['id'])))
+                self.notification_retry.pop(key, None)
+            except Exception:
+                self.notification_retry[key] = time.time() + 30
 
     def cleanup(self):
         now = time.time()
         if now >= self.next_cleanup:
             self.repo.prune(now - 7 * 86400)
             self.next_cleanup = now + 60
-            self.notification_retry = {run_id: due for run_id, due in self.notification_retry.items() if self.repo.run(run_id)}
+            self.notification_retry = {key: due for key, due in self.notification_retry.items()
+                if self.repo.run(key.removeprefix('task-progress-'))}
 
     async def tick(self, *, notify=True):
         self.cleanup()

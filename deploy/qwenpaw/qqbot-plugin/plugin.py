@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -74,11 +75,20 @@ async def sync(request: Request):
     agent_id = 'qq-' + str(uid)
     root = Path(WORKING_DIR).resolve()
     workspace = root / 'workspaces' / agent_id
+    task_id = data.get('task_id')
+    if task_id is not None:
+        if uid != ADMIN or not isinstance(task_id, str) or not re.fullmatch(r'[a-f0-9]{12}', task_id):
+            raise HTTPException(400, '任务身份无效。')
+        if data.get('reset'):
+            raise HTTPException(400, '任务不能通过聊天清空。')
+        workspace = workspace / 'files/.tasks' / task_id
+        agent_id += '-task-' + task_id
+        prompt, identity = '', {}
     if workspace.is_symlink() or not workspace.resolve().is_relative_to(root):
         raise HTTPException(409, '工作区路径异常。')
     execute = uid == ADMIN and data.get('execute') is True
     external_memory = data.get('external_memory') is True
-    fingerprint = hashlib.sha256(json.dumps(['gateway-v4-autonomy', prompt, identity, execute, external_memory], ensure_ascii=False).encode()).hexdigest()
+    fingerprint = hashlib.sha256(json.dumps(['gateway-v5-background', prompt, identity, execute, external_memory], ensure_ascii=False).encode()).hexdigest()
     async with lock:
         manager = request.app.state.multi_agent_manager
         marker = workspace / '.qqbot-sync'
@@ -143,6 +153,17 @@ async def sync(request: Request):
         if manager.is_agent_loaded(agent_id):
             await manager.reload_agent(agent_id)
         return {'agent_id': agent_id, 'changed': True}
+
+
+@router.post('/task/release')
+async def release_task(request: Request):
+    guard(request)
+    data = await request.json()
+    task_id = data.get('task_id') if isinstance(data, dict) else None
+    if not isinstance(task_id, str) or not re.fullmatch(r'[a-f0-9]{12}', task_id):
+        raise HTTPException(400, '任务身份无效。')
+    await request.app.state.multi_agent_manager.stop_agent('qq-' + str(ADMIN) + '-task-' + task_id)
+    return {'ok': True}
 
 
 class QQGatewayChannel(BaseChannel):

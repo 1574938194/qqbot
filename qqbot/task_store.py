@@ -37,6 +37,8 @@ class TaskStore:
         CREATE TABLE IF NOT EXISTS task_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL,
           kind TEXT NOT NULL, content TEXT NOT NULL, created_at REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS task_outputs (
+          run_id TEXT PRIMARY KEY, parts TEXT NOT NULL DEFAULT '[]');
         ''')
 
     def rows(self, sql, args=()):
@@ -76,8 +78,10 @@ class TaskStore:
         with self.db:
             ids = [r['id'] for r in self.rows('SELECT t.id FROM tasks t WHERE ' + condition, args)]
             for task_id in ids:
+                self.db.execute("DELETE FROM settings WHERE key IN (SELECT 'task-progress-'||id FROM task_runs WHERE task_id=?)", (task_id,))
                 for table in ('task_steps', 'task_events'):
                     self.db.execute(f'DELETE FROM {table} WHERE run_id IN (SELECT id FROM task_runs WHERE task_id=?)', (task_id,))
+                self.db.execute('DELETE FROM task_outputs WHERE run_id IN (SELECT id FROM task_runs WHERE task_id=?)', (task_id,))
                 self.db.execute('DELETE FROM task_runs WHERE task_id=?', (task_id,))
                 self.db.execute('DELETE FROM tasks WHERE id=?', (task_id,))
         return len(ids)
@@ -95,6 +99,25 @@ class TaskStore:
 
     def steps(self, run_id):
         return self.rows('SELECT * FROM task_steps WHERE run_id=? ORDER BY created_at,rowid', (run_id,))
+
+    def progress(self, run_id, stage):
+        previous = self.rows("SELECT content FROM task_events WHERE run_id=? AND kind='progress' ORDER BY id DESC LIMIT 1", (run_id,))
+        if previous and previous[0]['content'] == stage:
+            return
+        with self.db:
+            self.db.execute('INSERT INTO task_events(run_id,kind,content,created_at) VALUES (?,?,?,?)',
+                (run_id, 'progress', stage, time.time()))
+
+    def stages(self, run_id):
+        return self.rows("SELECT id,content,created_at FROM task_events WHERE run_id=? AND kind='progress' ORDER BY id", (run_id,))
+
+    def save_outputs(self, run_id, parts):
+        with self.db:
+            self.db.execute('INSERT OR REPLACE INTO task_outputs VALUES (?,?)', (run_id, encoded(parts)))
+
+    def outputs(self, run_id):
+        row = self.db.execute('SELECT parts FROM task_outputs WHERE run_id=?', (run_id,)).fetchone()
+        return json.loads(row[0]) if row else []
 
     def claim(self, task, messages):
         now = time.time()
