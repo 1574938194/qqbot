@@ -15,6 +15,11 @@ from .prompt_upload import PromptUpload
 from .llm import ModelError
 from .web_chat import WebChat
 from .image_generation import ImageGenerator, ImageReply
+from .qwenpaw_client import QwenReply
+from .qwenpaw_media import collect as collect_qwen_files, send_files as send_qwen_files
+from fastapi import HTTPException, Request
+import json
+import secrets
 import logging
 
 service: Service | None = None
@@ -39,6 +44,45 @@ async def task_sender(uid, text, bot_id):
     if bot is None:
         raise RuntimeError('机器人未连接，等待重连后投递。')
     await bot.send_private_msg(user_id=uid, message=Message(MessageSegment.text(text)))
+
+
+@get_driver().server_app.post('/internal/qwenpaw/deliver')
+async def qwenpaw_deliver(request: Request):
+    token = service.config.qwenpaw_token if service else ''
+    supplied = request.headers.get('x-qqbot-token', '')
+    if not token or not supplied.isascii() or not secrets.compare_digest(token, supplied):
+        raise HTTPException(403, '拒绝访问。')
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 20 * 1024 * 1024:
+            raise HTTPException(413, '内容过大。')
+    try:
+        data = json.loads(raw)
+        uid, parts = data['uid'], data['parts']
+        if type(uid) is not int or not isinstance(parts, list) or len(parts) > 100 or not all(isinstance(p, dict) for p in parts):
+            raise ValueError()
+    except (ValueError, TypeError, KeyError):
+        raise HTTPException(400, '消息参数错误。') from None
+    if not service.store.allowed(uid):
+        raise HTTPException(403, '用户无权限。')
+    bots = get_bots()
+    if len(bots) != 1:
+        raise HTTPException(503, 'QQ 未连接。')
+    bot = next(iter(bots.values()))
+    try:
+        files = await collect_qwen_files(uid, parts, service.config)
+        for part in parts:
+            if part.get('type') in ('text', 'refusal'):
+                text = part.get('text', part.get('refusal', ''))
+                if isinstance(text, str):
+                    for offset in range(0, len(text), service.config.message_chars):
+                        await task_sender(uid, text[offset:offset+service.config.message_chars], bot.self_id)
+        await send_qwen_files(bot, uid, files)
+    except Exception as exc:
+        logging.getLogger(__name__).warning('QwenPaw delivery failure: %s', type(exc).__name__)
+        raise HTTPException(502, '结果投递失败，请检查 QQ 连接及成果文件。') from None
+    return {'ok': True}
 
 
 @get_driver().on_startup
@@ -118,9 +162,15 @@ async def receive(bot: Bot, event: MessageEvent):
                 if service.store.allowed(event.user_id):
                     await bot.send_private_msg(user_id=event.user_id, message=Message(MessageSegment.image(raw)))
             return
-        mode = media.voice_mode(event.user_id) if media and isinstance(reply, ChatReply) else 'off'
+        mode = media.voice_mode(event.user_id) if media and isinstance(reply, (ChatReply, QwenReply)) else 'off'
         if mode != 'on':
             await notify(reply)
+        if isinstance(reply, QwenReply) and reply.parts and service.store.allowed(event.user_id):
+            try:
+                await send_qwen_files(bot, event.user_id, await collect_qwen_files(event.user_id, reply.parts, service.config))
+            except Exception as exc:
+                logging.getLogger(__name__).warning('QwenPaw artifact failure: %s', type(exc).__name__)
+                await notify('任务附件暂未发送成功，请在 QwenPaw 网页查看原文件。')
         if mode != 'off':
             try:
                 for start in range(0, len(reply), service.config.tts_max_chars):

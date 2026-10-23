@@ -1,0 +1,16 @@
+{
+  "agents": {
+    "deepseek_harness": {
+      "enabled": true,
+      "command": "/opt/qwenpaw-venv/bin/python",
+      "args": ["/opt/qqbot-qwenpaw/dsh-launch.py"],
+      "env": {},
+      "trusted": true,
+      "tool_parse_mode": "update_detail"
+    },
+    "opencode": {"enabled": false},
+    "qwen_code": {"enabled": false},
+    "claude_code": {"enabled": false},
+    "codex": {"enabled": false}
+  }
+}

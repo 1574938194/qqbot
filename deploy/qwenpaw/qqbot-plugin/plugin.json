@@ -1,0 +1,9 @@
+{
+  "id": "qqbot-gateway",
+  "name": "QQBot Gateway",
+  "version": "1.0.0",
+  "type": "channel",
+  "description": "保留 QQBot 资料与语音功能，连接 QwenPaw 会话和 DSH ACP。",
+  "entry": {"backend": "plugin.py"},
+  "qwenpaw_version": {"min": "2.2.2"}
+}

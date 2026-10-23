@@ -11,7 +11,7 @@ from .task_store import TaskStore
 from .task_files import ToolError, TaskFiles
 from .dsh_agent import DshAgent
 
-TASK_HELP = '''/tool 任务内容（显式启用工具；普通聊天不调用工具）
+TASK_HELP = '''/tool 任务内容（显式发起工具任务）
 /tool /task run 任务内容
 /tool /task in 10m 任务内容
 /tool /task at 2026-10-21T08:00 任务内容

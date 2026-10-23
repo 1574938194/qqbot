@@ -11,7 +11,7 @@
 - **多模态**：DeepSeek V4.1 Flash 图片理解，支持配文和多图；头像设置等待期间优先修改头像。
 - **语音**：单次朗读或按用户开启语音回复；支持 GPT-SoVITS 克隆音色、Edge 在线合成和 Windows SAPI。
 - **长期记忆**：可选 Mem0 OSS REST / Letta blocks，默认不依赖外部记忆服务。
-- **任务代理**：官方 DeepSeek Harness（DSH）独立容器，支持 shell、文件、Chromium 浏览器和公开 Git 仓库；保留提醒、任务状态和会话恢复。
+- **任务代理**：可选 QwenPaw 统一会话、网页控制台与记忆，通过原生 ACP 委托官方 DeepSeek Harness（DSH）执行 shell、文件和 Chromium 浏览器任务。接入与限制见 [QwenPaw 部署](deploy/qwenpaw/README.md)。
 - **任务清理**：`/task list` 仅显示待处理任务，`/task list all` 查看保留历史；结束任务满 7 天自动清理执行记录，未投递通知保留。
 - **权限**：管理员、白名单、显式启用的本机命令；群消息、自身及未授权消息不触发模型。
 - **网页调试**：通过 SSH 转发访问简单聊天页，复用管理员上下文，QQ 离线时也能聊天。
@@ -62,7 +62,7 @@ ssh -i E:\proj\agent_key.pem -N -L 127.0.0.1:18080:127.0.0.1:8080 root@110.40.22
 
 设置人设时，先发送 `/setprompt`（或点“设置人设”），再在5分钟内单独上传一个 txt/md 文件并点发送。文件解码后的原文（含空格和换行）会替换统一 system prompt，支持 UTF-8、带BOM的UTF-16和GB18030，不调用模型、不记入聊天。网页会显示等待状态，可点“取消人设等待”或发 `/setprompt cancel`。网页与 QQ 的等待分开；图片不消耗人设等待。命令与附件分开发送；头像设置继续使用 QQ。
 
-只有 `/tool` 进入工具模式；网页显式创建的后台任务、提醒仍向 QQ 投递。需要 QQ 资料 API 的命令也要求 QQ 在线。
+QwenPaw 模式下，明确任务可用自然语言提出，`/tool` 可显式发起，`/stop` 停止当前任务；legacy 模式仍需 `/tool`。网页创建的后台任务、提醒向 QQ 投递，需要 QQ 资料 API 的命令要求 QQ 在线。
 
 入口只接受本机来源和本机 Host，并校验跨站来源与页面随机令牌，不使用独立密码。保持服务监听 `127.0.0.1`，只通过 SSH 转发访问，不要将网页反向代理或公开映射到公网。网页拥有管理员权限，与本机直接调试等效。
 
@@ -96,7 +96,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 | `/speaker reset` | 恢复默认音色；不改变文字/语音回复模式 |
 | `/remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
 | `/tool /task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
-| `/tool 查询资料并整理报告` | 显式启用工具；普通聊天不调用通用工具；明确的画图请求走图片接口 |
+| `/tool 查询资料并整理报告` | 显式执行工具任务；QwenPaw 模式也支持自然语言提出明确任务；画图走图片接口 |
 | `/task list`、`/task show ID`、`/task steps ID` | 查询任务与执行进度 |
 | `/task pause ID`、`/task cancel ID`；`/tool /task resume ID`、`/tool /task retry ID` | 暂停、取消、显式恢复或重试工具任务 |
 

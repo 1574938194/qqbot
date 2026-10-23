@@ -42,6 +42,11 @@ class Settings:
     task_result_chars: int = 10000
     dsh_base_url: str = 'http://127.0.0.1:32128'
     dsh_token: str = ''
+    agent_backend: str = 'legacy'
+    qwenpaw_base_url: str = 'http://127.0.0.1:8088'
+    qwenpaw_token: str = ''
+    qwenpaw_timeout: float = 900
+    qwenpaw_files: str = '/qwenpaw'
     llm_min_interval: float = 1
     llm_rate_backoff: float = 30
     llm_rate_retries: int = 2
@@ -63,6 +68,14 @@ class Settings:
     tts_default_speaker: str = 'aoi'
 
     def __post_init__(self):
+        if self.agent_backend not in ('legacy', 'qwenpaw'):
+            raise ValueError('AGENT_BACKEND 必须为 legacy 或 qwenpaw')
+        from urllib.parse import urlsplit
+        qwen = urlsplit(self.qwenpaw_base_url)
+        if qwen.scheme != 'http' or qwen.hostname not in ('127.0.0.1', 'localhost', '::1') or qwen.username or qwen.password or qwen.query or qwen.fragment or qwen.path not in ('', '/'):
+            raise ValueError('QWENPAW_BASE_URL 必须是本机 HTTP 服务根地址')
+        if self.qwenpaw_timeout <= 0:
+            raise ValueError('QWENPAW_TIMEOUT 必须大于0')
         for name in ("timeout", "keep_rounds", "context_tokens", "compress_tokens", "max_input_tokens", "max_reply_tokens", "summary_tokens", "message_chars", "memory_timeout", "memory_top_k", "memory_chars", "task_poll_seconds", "task_concurrency", "task_max_per_user", "task_run_timeout", "task_result_chars"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} 必须大于 0")
@@ -130,6 +143,11 @@ class Settings:
             task_run_timeout=float(value("TASK_RUN_TIMEOUT", "900")),
             dsh_base_url=value('DSH_BASE_URL', cls.dsh_base_url).rstrip('/'),
             dsh_token=value('DSH_TOKEN', ''),
+            agent_backend=value('AGENT_BACKEND', 'legacy').lower(),
+            qwenpaw_base_url=value('QWENPAW_BASE_URL', cls.qwenpaw_base_url).rstrip('/'),
+            qwenpaw_token=value('QQBOT_GATEWAY_TOKEN', ''),
+            qwenpaw_timeout=float(value('QWENPAW_TIMEOUT', '900')),
+            qwenpaw_files=value('QWENPAW_FILES', cls.qwenpaw_files),
             llm_min_interval=float(value('LLM_MIN_INTERVAL', '1')),
             llm_rate_backoff=float(value('LLM_RATE_BACKOFF', '30')),
             llm_rate_retries=int(value('LLM_RATE_RETRIES', '2')),

@@ -77,6 +77,7 @@ async def test_reverse_websocket(tmp_path):
     port = free_port()
     env = {**os.environ, 'HOST': '127.0.0.1', 'PORT': str(port),
            'ONEBOT_ACCESS_TOKEN': 'test-access', 'LLM_API_KEY': 'test-only',
+           'QQBOT_GATEWAY_TOKEN': 'test-gateway-token',
            'LLM_BASE_URL': f'http://127.0.0.1:{server.server_port}/v1',
            'DB_PATH': str(tmp_path / 'ws.db'), 'MESSAGE_CHARS': '12',
            # 等待提示由 test_reply_wait 覆盖，此处只检查最终正文分段收发。
@@ -167,6 +168,29 @@ async def test_reverse_websocket(tmp_path):
                     notification += await receive_segment()
                 assert notification == expected
                 assert len(calls) == 1  # 提醒不调用模型
+                # QwenPaw 原生频道回调：鉴权、白名单与最终内容投递。
+                async with httpx.AsyncClient(trust_env=False) as client:
+                    target = f'http://127.0.0.1:{port}/internal/qwenpaw/deliver'
+                    denied = await client.post(target, json={'uid': ADMIN, 'parts': []})
+                    assert denied.status_code == 403
+                    denied = await client.post(target, headers={'X-QQBot-Token': 'test-gateway-token'},
+                        json={'uid': 123, 'parts': []})
+                    assert denied.status_code == 403
+                    pending = asyncio.create_task(client.post(target,
+                        headers={'X-QQBot-Token': 'test-gateway-token'},
+                        json={'uid': ADMIN, 'parts': [
+                            {'type': 'reasoning', 'text': '隐藏推理'},
+                            {'type': 'text', 'text': '任务完成'},
+                            {'type': 'file', 'filename': 'report.txt',
+                             'file_url': 'data:text/plain;base64,MTUz'}]}))
+                    assert await receive_segment() == '任务完成'
+                    action = json.loads(await asyncio.wait_for(ws.recv(), 10))
+                    assert action['action'] == 'upload_private_file'
+                    assert action['params']['file'] == 'base64://MTUz'
+                    assert action['params']['name'] == 'report.txt'
+                    await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
+                    assert (await pending).status_code == 200
+                assert len(calls) == 1
                 await ws.send(event(ADMIN, '/name 小暖'))
                 action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'set_qq_profile'
