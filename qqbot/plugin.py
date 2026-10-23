@@ -1,5 +1,5 @@
-from nonebot import get_bots, get_driver, on_message, on_notice
-from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment, NoticeEvent
+from nonebot import get_bots, get_driver, on_message, on_notice, on_request
+from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment, NoticeEvent, RequestEvent
 
 from .config import Settings, ADMIN
 from .llm import LLM
@@ -17,6 +17,7 @@ from .web_chat import WebChat
 from .image_generation import ImageGenerator, ImageReply
 from .qwenpaw_client import QwenReply
 from .qwenpaw_media import collect as collect_qwen_files, send_files as send_qwen_files
+from .group_chat import GroupChat, accept_target_invite
 from fastapi import HTTPException, Request
 import json
 import secrets
@@ -27,8 +28,10 @@ process_lock: ProcessLock | None = None
 profile: Profile | None = None
 media: Media | None = None
 prompt_upload: PromptUpload | None = None
+group_chat: GroupChat | None = None
 matcher = on_message(priority=10, block=False)
 file_notice = on_notice(priority=10, block=False)
+group_invite = on_request(priority=10, block=False)
 web_chat = WebChat(get_driver().server_app, lambda: (service, profile, media, prompt_upload), get_bots)
 
 
@@ -87,7 +90,7 @@ async def qwenpaw_deliver(request: Request):
 
 @get_driver().on_startup
 async def startup():
-    global service, process_lock, profile, media, prompt_upload
+    global service, process_lock, profile, media, prompt_upload, group_chat
     config = Settings.load()
     process_lock = ProcessLock(config.db_path)
     llm = LLM(config)
@@ -98,6 +101,7 @@ async def startup():
     tasks = Tasks(store, llm, config, sender=task_sender) if config.tasks_enabled else None
     service = Service(store, llm, config, Memory(store, llm, config), tasks, ImageGenerator(config))
     service.memory.start()
+    group_chat = GroupChat(service, media)
     if tasks:
         tasks.start()
 
@@ -111,6 +115,8 @@ async def shutdown():
         if media:
             await media.close()
         await service.memory.close()
+        if group_chat:
+            group_chat.close()
         service.store.close()
     if process_lock:
         process_lock.close()
@@ -118,6 +124,10 @@ async def shutdown():
 
 @matcher.handle()
 async def receive(bot: Bot, event: MessageEvent):
+    if service and event.message_type == 'group':
+        if group_chat:
+            await group_chat.handle(bot, event)
+        return
     if not service or event.message_type != "private" or event.user_id == int(bot.self_id):
         return
     if not service.store.allowed(event.user_id):
@@ -193,3 +203,11 @@ async def receive_prompt_file(bot: Bot, event: NoticeEvent):
     if reply:
         for start in range(0, len(reply), service.config.message_chars):
             await bot.send_private_msg(user_id=ADMIN, message=Message(MessageSegment.text(reply[start:start + service.config.message_chars])))
+
+
+@group_invite.handle()
+async def receive_group_invite(bot: Bot, event: RequestEvent):
+    try:
+        await accept_target_invite(bot, event)
+    except Exception as exc:
+        logging.getLogger(__name__).warning('Target group invite failure: %s', type(exc).__name__)

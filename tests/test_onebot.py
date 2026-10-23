@@ -331,6 +331,41 @@ async def test_reverse_websocket(tmp_path):
                 assert database.execute('SELECT count(*) FROM turns').fetchone()[0] == history_count + 2
                 database.close()
                 assert len(calls) == 7
+                # 在真实 NoneBot WS 上验证群事件只接受指定群、管理员、真实 @。
+                async with connect(url, additional_headers=headers, proxy=None) as group_ws:
+                    def group_event(uid=ADMIN, gid=707318959, mention='99999'):
+                        payload=json.loads(event(uid,'群聊隔离测试',group=True))
+                        payload['group_id']=gid
+                        if mention:
+                            payload['message'].append({'type':'at','data':{'qq':mention}})
+                        return json.dumps(payload)
+                    for payload in (group_event(123),group_event(gid=100),group_event(mention=None),group_event(mention='all')):
+                        await group_ws.send(payload)
+                    with pytest.raises(TimeoutError):
+                        await asyncio.wait_for(group_ws.recv(),.3)
+                    assert len(calls)==7
+                    await group_ws.send(group_event())
+                    received=''
+                    while len(received)<len('[CQ:at,qq=123]最终正文'*3):
+                        action=json.loads(await asyncio.wait_for(group_ws.recv(),30))
+                        assert action['action']=='send_group_msg'
+                        assert action['params']['group_id']==707318959
+                        received+=''.join(p['data']['text'] for p in action['params']['message'])
+                        await group_ws.send(json.dumps({'status':'ok','retcode':0,'data':{'message_id':44},'echo':action['echo']}))
+                    assert received=='[CQ:at,qq=123]最终正文'*3
+                    assert len(calls)==8 and web_prompt not in str(calls[-1]['messages'])
+                    for gid in (100,707318959):
+                        await group_ws.send(json.dumps({'time':1,'self_id':99999,'post_type':'request',
+                            'request_type':'group','sub_type':'invite','group_id':gid,'user_id':ADMIN,
+                            'comment':'邀请测试','flag':'invite-fixture'}))
+                        if gid==100:
+                            with pytest.raises(TimeoutError):
+                                await asyncio.wait_for(group_ws.recv(),.2)
+                        else:
+                            action=json.loads(await asyncio.wait_for(group_ws.recv(),10))
+                            assert action['action']=='set_group_add_request'
+                            assert action['params']['flag']=='invite-fixture' and action['params']['approve'] is True
+                            await group_ws.send(json.dumps({'status':'ok','retcode':0,'data':{},'echo':action['echo']}))
         finally:
             process.terminate()
             process.wait(timeout=10)
