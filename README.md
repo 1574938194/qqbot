@@ -56,13 +56,13 @@ ssh -i E:\proj\agent_key.pem -N -L 127.0.0.1:18080:127.0.0.1:8080 root@110.40.22
 
 然后打开 **http://127.0.0.1:18080/debug**。其他部署请替换密钥路径和服务器地址；本地端口被占用时可以改用 18081。
 
-网页使用超级管理员 `1574938194` 的同一份上下文、人设、记忆和权限。普通聊天会保存，QQ 与网页聊天/清空共用同一用户锁；命令及命令回复不记入聊天上下文。页面显示最近 50 轮，刷新会重新读取历史，不会清空数据。支持多行消息、状态、压缩、文本命令以及 `/say` 语音试听；网页普通回复显示文字，`/voice` 设置仍影响 QQ。
+网页使用超级管理员 `1574938194` 的同一份上下文、人设、记忆和权限。普通聊天会保存，QQ 与网页聊天/清空共用同一用户锁；命令及命令回复不记入聊天上下文。页面显示最近 50 轮，刷新会重新读取历史，不会清空数据。支持多行消息、状态、压缩、文本命令以及 `/voice say` 语音试听；网页普通回复显示文字，`/voice` 设置仍影响 QQ。
 
 点“添加图片”选择图片，可附带文字再发送，也可只发图片；默认一次最多3张、每张5 MiB，支持 JPEG、PNG、WebP、GIF，先解码压缩后识图。点“添加 txt/md”选择一个512 KiB以内的文本文件，不在人设等待状态时作为文件资料聊天，仍受单次输入和上下文长度限制。上传内容不保存到服务器文件目录，原图不写入聊天历史，只保存图片识别资料；普通文本附件内容会随成功聊天保存。
 
-设置人设时，先发送 `/setprompt`（或点“设置人设”），再在5分钟内单独上传一个 txt/md 文件并点发送。文件解码后的原文（含空格和换行）会替换统一 system prompt，支持 UTF-8、带BOM的UTF-16和GB18030，不调用模型、不记入聊天。网页会显示等待状态，可点“取消人设等待”或发 `/setprompt cancel`。网页与 QQ 的等待分开；图片不消耗人设等待。命令与附件分开发送；头像设置继续使用 QQ。
+设置人设时，先发送 `/prompt upload`（或点“设置人设”），再在5分钟内单独上传一个 txt/md 文件并点发送。文件解码后的原文（含空格和换行）会替换统一 system prompt，支持 UTF-8、带BOM的UTF-16和GB18030，不调用模型、不记入聊天。网页会显示等待状态，可点“取消人设等待”或发 `/prompt cancel`。网页与 QQ 的等待分开；图片不消耗人设等待。命令与附件分开发送；头像设置继续使用 QQ。
 
-QwenPaw 模式下，明确任务可用自然语言提出，`/tool` 可显式发起，`/stop` 停止当前任务；legacy 模式仍需 `/tool`。网页创建的后台任务、提醒向 QQ 投递，需要 QQ 资料 API 的命令要求 QQ 在线。
+QwenPaw 模式下，明确任务可用自然语言提出，`/task run` 可显式发起，`/task stop` 停止当前任务；legacy 模式使用 `/task run`。网页创建的后台任务、提醒向 QQ 投递，需要 QQ 资料 API 的命令要求 QQ 在线。
 
 入口只接受本机来源和本机 Host，并校验跨站来源与页面随机令牌，不使用独立密码。保持服务监听 `127.0.0.1`，只通过 SSH 转发访问，不要将网页反向代理或公开映射到公网。网页拥有管理员权限，与本机直接调试等效。
 
@@ -84,21 +84,20 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 
 ## 常用命令
 
+命令合并为英文分组：`/chat` 管对话和记忆，`/voice` 管语音，`/profile` 管资料，`/prompt` 管人设，`/task` 管任务和提醒。`/help` 查看精简目录，`/help chat|voice|task|profile|prompt|admin` 查看分类。旧命令（包括中文别名）继续兼容，不重复展示；“签到”保留原入口。
+
 | 命令 | 说明 |
 | --- | --- |
-| `/help`、`/status` | 帮助、模型、历史与上下文估算状态 |
-| `/compress`、`/reset` | 压缩或清空自己的陪伴记忆与摘要 |
-| `/emotion`、`/memory status` | 情感估算、外部记忆同步状态 |
-| `/say 你好，我是小爱` | 单次发语音，不调用聊天模型 |
+| `/help`、`/chat status` | 帮助、模型、历史与上下文估算状态 |
+| `/chat compress`、`/chat reset` | 压缩或清空自己的陪伴记忆与摘要 |
+| `/chat emotion`、`/chat memory status` | 情感估算、外部记忆同步状态 |
+| `/voice say 你好，我是小爱` | 单次发语音，不调用聊天模型 |
 | `/voice on` / `off` / `both` | 语音 / 默认文字 / 文字加语音 |
-| `/speaker list` | 查看可选音色和自己的当前选择 |
-| `/speaker aoi` / `noto` / `hayami` / `edge` | 悠木碧 / 能登麻美子 / 早见沙织 / 原 Edge 晓晓；选择按用户保存 |
-| `/speaker reset` | 恢复默认音色；不改变文字/语音回复模式 |
-| `/remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
-| `/tool /task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
-| `/tool 查询资料并整理报告` | 显式执行工具任务；QwenPaw 模式也支持自然语言提出明确任务；画图走图片接口 |
+| `/voice speaker aoi` / `noto` / `hayami` / `edge` | 悠木碧 / 能登麻美子 / 早见沙织 / 原 Edge 晓晓；list 查看，reset 恢复默认，按用户保存 |
+| `/task remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
+| `/task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
 | `/task list`、`/task show ID`、`/task steps ID` | 查询任务与执行进度 |
-| `/task pause ID`、`/task cancel ID`；`/tool /task resume ID`、`/tool /task retry ID` | 暂停、取消、显式恢复或重试工具任务 |
+| `/task pause ID`、`/task cancel ID`；`/task resume ID`、`/task retry ID` | 暂停、取消、显式恢复或重试工具任务 |
 
 仅超级管理员可用：
 
@@ -106,22 +105,22 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 /whitelist list
 /whitelist add QQ号
 /whitelist remove QQ号
-/setprompt
-/setprompt cancel
+/prompt upload
+/prompt cancel
 /prompt show
 /prompt set 统一人设正文（支持多行）
 /prompt reset
-/setname 爱
-/setnickname 小爱
-/avatar
-/avatar cancel
-/tools shell on
-/tools shell off
+/profile name 爱
+/profile nickname 小爱
+/profile avatar
+/profile avatar cancel
+/task shell on
+/task shell off
 ```
 
-管理员发送 `/setprompt` 后，5分钟内的下一条非命令私聊文本，或第一个 `.txt` / `.md` 文件，会原样替换统一 system prompt，下轮对话生效。支持多行与原换行，文件上限512KB，并受上下文长度限制；UTF-8、带BOM的UTF-16、GB18030文件可用。失败保留旧人设和剩余等待时间；`/setprompt cancel` 取消。其他账号、群文件不会消耗等待；人设提交与确认不会进入聊天历史或调用模型，名字和昵称仍由 `/setname`、`/setnickname` 单独设置。
+管理员发送 `/prompt upload` 后，5分钟内的下一条非命令私聊文本，或第一个 `.txt` / `.md` 文件，会原样替换统一 system prompt，下轮对话生效。支持多行与原换行，文件上限512KB，并受上下文长度限制；UTF-8、带BOM的UTF-16、GB18030文件可用。失败保留旧人设和剩余等待时间；`/prompt cancel` 取消。其他账号、群文件不会消耗等待；人设提交与确认不会进入聊天历史或调用模型，名字和昵称仍由 `/profile name`、`/profile nickname` 单独设置。
 
-`/avatar` 后5分钟内收到的管理员第一张私聊图片用于设置头像；超时/取消后恢复普通识图。`/setname` 设置正式角色名，`/setnickname` 同步 QQ 昵称及角色昵称，身份独立保存，不改写原始人设文件。`/name`、`/nickname` 是昵称命令的兼容别名。
+`/profile avatar` 后5分钟内收到的管理员第一张私聊图片用于设置头像；超时/取消后恢复普通识图。`/profile name` 设置正式角色名，`/profile nickname` 同步 QQ 昵称及角色昵称，身份独立保存，不改写原始人设文件。旧 `/name`、`/nickname`、`/setname`、`/setnickname`、`/avatar` 继续兼容，但帮助只列出新入口。
 
 未知 `/命令` 不进入模型；输入语音转文字尚未实现。
 
@@ -134,7 +133,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 - 图片默认每条最多3张、每张5 MiB；不持久保存原图，识图描述作为标注来源的聊天资料保存。
 - 语音默认关闭；`TTS_BACKEND=auto` 优先 Edge 在线语音，失败回退 Windows SAPI。设置 `sapi` 可仅本地合成。
 - `MEMORY_BACKEND=none` 为默认值；接入 Mem0/Letta 需自行部署服务并配置独立密钥。
-- SQLite与成果文件位于 `data/`，重启恢复。`/reset` 保留独立任务、任务笔记及成果；停止定时工作用 `/task cancel ID`。
+- SQLite与成果文件位于 `data/`，重启恢复。`/chat reset` 保留独立任务、任务笔记及成果；停止定时工作用 `/task cancel ID`。
 
 ## 权限与隐私
 
@@ -142,7 +141,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 
 图片会发送到配置的视觉模型服务。Edge 合成会把待朗读文本发送到微软语音服务；本地 SAPI 可避免这部分云端传输。外部记忆仅在显式启用后同步。
 
-**DSH 默认关闭，仅供超级管理员使用。** `/tools shell on` 开启后，任务在独立非 root Linux 容器执行，可运行 Python/bash 和 Chromium；不挂载机器人数据库、人设、Docker socket。取消不能撤销已发生的操作。部署与插件边界见 [DSH 配置](deploy/dsh/README.md)。
+**DSH 默认关闭，仅供超级管理员使用。** `/task shell on` 开启后，任务在独立非 root Linux 容器执行，可运行 Python/bash 和 Chromium；不挂载机器人数据库、人设、Docker socket。取消不能撤销已发生的操作。部署与插件边界见 [DSH 配置](deploy/dsh/README.md)。
 
 发送“帮我画一张雨夜街道的插画”或 `/draw 雨夜街道的插画` 可生成图片并直接显示在 QQ/网页，默认 `hunyuan-image-alpha`；明确画图请求不需要 `/tool`。生成图只展示在当前消息，不保存原图或签名 URL 到聊天历史。
 
@@ -178,8 +177,8 @@ docs/OPERATIONS.md      详细配置、运行语义与排错
 
 管理员私聊发送 **签到**，调用 buddyproxy 当前站点账号池签到并返回脱敏汇总。管理员通过 `/pool` 查看、`/pool cn` 切国内、`/pool global` 切国际，配置由代理持久化；`BUDDY_ADMIN_PASSWORD` 对应代理管理密码。国际站通常没有签到活动，返回不支持属于正常结果。
 
-`/setname 名字` 设置角色正式名字；不带参数可查看当前保存的名字及昵称。`/setnickname 昵称` 单独修改昵称并同步 QQ。`/status` 也会显示两者。名字作为运行时身份覆盖旧人设和旧历史中的旧自称，原始人设与聊天历史保留。
+`/profile name 名字` 设置角色正式名字；不带参数可查看当前保存的名字及昵称。`/profile nickname 昵称` 单独修改昵称并同步 QQ。`/chat status` 也会显示两者。名字作为运行时身份覆盖旧人设和旧历史中的旧自称，原始人设与聊天历史保留。
 
 GPT-SoVITS 纯云端部署和音色配置见 [语音部署](deploy/gpt-sovits/README.md)。
 
-完整 GPT + SoVITS ONNX、多音色部署见 [ONNX 语音部署](deploy/onnx-speech/README.md)。设置 `TTS_BACKEND=genie` 后可使用 `/speaker`，默认仍为文字回复。三套克隆模型及各自参考音频独立挂载，只驻留当前选中的一套声学模型。选择 `edge` 时使用原微软晓晓语音；克隆生成失败会明确报错，不会自动换声音。
+完整 GPT + SoVITS ONNX、多音色部署见 [ONNX 语音部署](deploy/onnx-speech/README.md)。设置 `TTS_BACKEND=genie` 后可使用 `/voice speaker`，默认仍为文字回复。三套克隆模型及各自参考音频独立挂载，只驻留当前选中的一套声学模型。选择 `edge` 时使用原微软晓晓语音；克隆生成失败会明确报错，不会自动换声音。

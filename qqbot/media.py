@@ -16,9 +16,9 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 from PIL import Image, ImageOps
 
+from .commands import normalize, VOICE_HELP
 from .llm import ModelError
 
-MEDIA_HELP = '\n/voice on|off|both（语音/文字/两者）\n/speaker list；/speaker aoi|noto|hayami|edge（切换自己的声音）\n/say 内容（单次朗读）'
 SPEAKERS = {'aoi': '悠木碧', 'noto': '能登麻美子', 'hayami': '早见沙织', 'edge': '晓晓（原 Edge 语音）'}
 EDGE_VOICE = 'zh-CN-XiaoxiaoNeural'
 
@@ -62,7 +62,7 @@ class Media:
     async def command(self, uid, text):
         if not self.store.allowed(uid):
             return None
-        parts = text.strip().split(maxsplit=1)
+        parts = normalize(text).strip().split(maxsplit=1)
         command = parts[0].lower() if parts else ''
         args = parts[1].strip() if len(parts) > 1 else ''
         if command == '/speaker':
@@ -70,26 +70,26 @@ class Media:
                 return '当前后端尚未启用多音色。请管理员配置完整 ONNX 语音服务。'
             if not args or args == 'list':
                 choices = '\n'.join(f'{key}：{name}' for key, name in SPEAKERS.items())
-                return f'当前声音：{SPEAKERS[self.speaker(uid)]}（合成语音）\n{choices}\n用法：/speaker 声音ID；/speaker reset 恢复默认。'
+                return f'当前声音：{SPEAKERS[self.speaker(uid)]}（合成语音）\n{choices}\n用法：/voice speaker 声音ID；/voice speaker reset 恢复默认。'
             aliases = {name: key for key, name in SPEAKERS.items()}
             aliases.update({'晓晓': 'edge', '原语音': 'edge'})
             chosen = self.config.tts_default_speaker if args == 'reset' else aliases.get(args, args.lower())
             if chosen not in SPEAKERS:
-                return '声音不存在，请用 /speaker list 查看。'
+                return '声音不存在，请用 /voice speaker list 查看。'
             with self.store.db:
                 self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('speaker:' + str(uid), chosen))
-            return f'已将你的声音切换为：{SPEAKERS[chosen]}。用 /say 内容 试听。'
+            return f'已将你的声音切换为：{SPEAKERS[chosen]}。用 /voice say 内容 试听。'
         if command == '/voice':
             if args not in ('on', 'off', 'both'):
                 label = SPEAKERS[self.speaker(uid)] if self.config.tts_backend == 'genie' else self.config.tts_voice
                 voice = f'\n当前音色：{label}（合成语音）。' if self.config.tts_backend in ('gptsovits', 'genie') else ''
-                return f'当前语音模式：{self.voice_mode(uid)}。用法：/voice on|off|both；/say 内容 单次朗读。' + voice
+                return f'当前语音模式：{self.voice_mode(uid)}。' + voice + '\n' + VOICE_HELP
             with self.store.db:
                 self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', ('voice_mode:' + str(uid), args))
             return {'on': '已开启语音回复。', 'off': '已切换为文字回复。', 'both': '已开启文字和语音回复。'}[args]
         if command == '/say':
             if not args:
-                return '用法：/say 要朗读的内容'
+                return '用法：/voice say 要朗读的内容'
             return await self.synthesize(args, uid=uid)
         return None
 

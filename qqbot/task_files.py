@@ -43,7 +43,7 @@ class TaskFiles:
                 raise ToolError('文件不存在或路径越界。')
             with path.open('r', encoding='utf-8') as stream:
                 return stream.read(10000)
-        raise ToolError('旧版 agent 工具已移除，请使用 /tool 提交 DSH 任务。')
+        raise ToolError('旧版 agent 工具已移除，请使用 /task run 提交 DSH 任务。')
 
     async def close(self):
         pass

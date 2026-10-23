@@ -14,6 +14,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from .commands import normalize
 from .config import ADMIN
 from .llm import ModelError
 from .prompt_upload import MAX_BYTES, decode_text
@@ -104,8 +105,8 @@ class WebChat:
         except (ValueError, KeyError, TypeError, UnicodeError, AttributeError):
             raise HTTPException(400, '请输入有效文本或上传正常图片、txt/md文件，文件需符合大小限制。') from None
         if files and text.lstrip().startswith('/'):
-            raise HTTPException(400, '命令请单独发送；设置人设请先发送 /setprompt，再单独上传 txt/md 文件。')
-        if text.strip() == '/stop' and service.qwen:
+            raise HTTPException(400, '命令请单独发送；设置人设请先发送 /prompt upload，再单独上传 txt/md 文件。')
+        if normalize(text).strip() == '/stop' and service.qwen:
             return JSONResponse({'reply': await service.handle(ADMIN, '/stop'), 'audio': [], 'images': [], 'files': []}, headers=self.headers())
         if self.lock.locked():
             raise HTTPException(409, '网页上一条请求仍在处理中，请等待。')
@@ -152,6 +153,7 @@ class WebChat:
         return result
 
     async def dispatch(self, service, text, files=()):
+        text = normalize(text) if not files else text
         _, profile, media, upload = self.runtime()
         bots = self.bots()
         live_bot = next(iter(bots.values())) if len(bots) == 1 else None

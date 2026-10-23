@@ -28,9 +28,10 @@ async def finish_tick(tasks):
 async def test_dsh_admin_optin_background_and_history_isolation(manager):
     t = manager
     s = Service(t.store, None, t.config, tasks=t)
-    assert '启用' in await s.handle(ADMIN, '/tool 写文件测试')
-    t.tools.set_shell(ADMIN, True)
+    assert '启用' in await s.handle(ADMIN, '/task run 写文件测试')
+    await s.handle(ADMIN, '/task shell on')
     t.store.grant(123, True)
+    assert '超级管理员' in await s.handle(123, '/task shell off')
     assert '仅供管理员' in await s.handle(123, '/tool 写文件测试')
     reply = await s.handle(ADMIN, '/tool 写文件测试', self_id=99999)
     assert 'DSH 任务' in reply

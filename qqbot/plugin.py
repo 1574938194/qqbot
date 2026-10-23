@@ -1,3 +1,4 @@
+from .commands import normalize
 from nonebot import get_bots, get_driver, on_message, on_notice, on_request
 from nonebot.adapters.onebot.v11 import Bot, Message, MessageEvent, MessageSegment, NoticeEvent, RequestEvent
 
@@ -153,7 +154,7 @@ async def receive(bot: Bot, event: MessageEvent):
         if service.store.allowed(event.user_id):
             await bot.send_private_msg(user_id=event.user_id, message=Message(MessageSegment.record(audio)))
     images = [segment for segment in event.message if segment.type == 'image']
-    text = event.get_plaintext()
+    text = normalize(event.get_plaintext())
     if media and not images and text.strip().split(maxsplit=1)[:1] and text.strip().split(maxsplit=1)[0].lower() in ('/voice', '/say', '/speaker'):
         try:
             result = await media.command(event.user_id, text)

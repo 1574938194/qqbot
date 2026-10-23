@@ -41,11 +41,11 @@ async def test_only_explicit_tool_command_enters_tool_loop(service):
     assert not service.store.history(ADMIN)
 
 
-async def test_agent_creation_requires_tool_prefix_but_management_and_reminders_work(service):
-    assert '/tool' in await service.handle(ADMIN, '/task run 查询天气')
-    service.tasks.command.assert_not_called()
+async def test_task_entry_and_legacy_prefix_share_management_and_reminders(service):
+    await service.handle(ADMIN, '/task run 查询天气')
+    service.tasks.command.assert_awaited_with(ADMIN, '/task', 'run 查询天气', bot_id='')
     await service.handle(ADMIN, '/tool /task run 查询天气', self_id=99999)
     service.tasks.command.assert_awaited_with(ADMIN, '/task', 'run 查询天气', bot_id='99999')
     await service.handle(ADMIN, '/task list')
     await service.handle(ADMIN, '/remind in 5m 喝水')
-    assert service.tasks.command.await_count == 3
+    assert service.tasks.command.await_count == 4

@@ -147,7 +147,7 @@ async def test_reverse_websocket(tmp_path):
                 assert image_action['params']['message'][0]['data']['file'].startswith('base64://')
                 await ws.send(json.dumps({'status':'ok','retcode':0,'data':{'message_id':22},'echo':image_action['echo']}))
                 assert len(calls)==1  # 图片独立接口，命令不进入对话上下文。
-                await ws.send(event(ADMIN, '/remind in 1s 主动提醒验收'))
+                await ws.send(event(ADMIN, '/task remind in 1s 主动提醒验收'))
                 async def receive_segment():
                     action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                     assert action['action'] == 'send_private_msg'
@@ -191,15 +191,15 @@ async def test_reverse_websocket(tmp_path):
                     await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
                     assert (await pending).status_code == 200
                 assert len(calls) == 1
-                await ws.send(event(ADMIN, '/name 小暖'))
+                await ws.send(event(ADMIN, '/profile nickname 小暖'))
                 action = json.loads(await asyncio.wait_for(ws.recv(), 45))
                 assert action['action'] == 'set_qq_profile'
                 assert action['params'] == {'nickname': '小暖'}
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
                 assert await receive_segment() == '机器人昵称已更新。'
-                await ws.send(event(ADMIN, '/avatar'))
+                await ws.send(event(ADMIN, '/profile avatar'))
                 prompt = ''
-                while not prompt.endswith('/avatar cancel。'):
+                while not prompt.endswith('/profile avatar cancel。'):
                     prompt += await receive_segment()
                 assert '5分钟' in prompt
                 await ws.send(event(ADMIN, '图片说明', image=True))
@@ -231,7 +231,7 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(event(ADMIN, '/voice off'))
                 assert await receive_segment() == '已切换为文字回复。'
                 for speaker in ('noto', 'hayami', 'aoi'):
-                    await ws.send(event(ADMIN, '/speaker ' + speaker))
+                    await ws.send(event(ADMIN, '/voice speaker ' + speaker))
                     acknowledgment = ''
                     while not acknowledgment.endswith('试听。'):
                         acknowledgment += await receive_segment()
@@ -243,7 +243,7 @@ async def test_reverse_websocket(tmp_path):
                     await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 4}, 'echo': action['echo']}))
                     assert len(calls) == 3  # /say 不调用模型
                     assert speech_calls[-1] == {'text': '你好小爱', 'speaker': speaker}
-                await ws.send(event(ADMIN, '/speaker noto'))
+                await ws.send(event(ADMIN, '/voice speaker noto'))
                 acknowledgment = ''
                 while not acknowledgment.endswith('试听。'):
                     acknowledgment += await receive_segment()
@@ -265,9 +265,9 @@ async def test_reverse_websocket(tmp_path):
                 database = sqlite3.connect(tmp_path / 'ws.db')
                 history_count = database.execute('SELECT count(*) FROM turns').fetchone()[0]
                 async def prompt_command():
-                    await ws.send(event(ADMIN, '/setprompt'))
+                    await ws.send(event(ADMIN, '/prompt upload'))
                     acknowledgment = ''
-                    while not acknowledgment.endswith('/setprompt cancel。'):
+                    while not acknowledgment.endswith('/prompt cancel。'):
                         acknowledgment += await receive_segment()
                 async def prompt_done():
                     acknowledgment = ''
@@ -321,7 +321,7 @@ async def test_reverse_websocket(tmp_path):
                 assert result.status_code == 200 and result.json()['reply'] == '[CQ:at,qq=123]最终正文' * 3
                 assert len(calls) == 7  # 一次识图、一次陪伴正文。
                 assert calls[-2]['messages'][1]['content'][1]['image_url']['url'].startswith('data:image/jpeg;base64,')
-                await client.post('/debug/chat', json={'text': '/setprompt'})
+                await client.post('/debug/chat', json={'text': '/prompt upload'})
                 web_prompt = '网页文件人设测试\r\n保留换行\r\n'
                 result = await client.post('/debug/chat', json={'files': [
                     {'name': 'role.md', 'data': base64.b64encode(web_prompt.encode()).decode()}]})

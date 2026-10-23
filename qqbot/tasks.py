@@ -11,25 +11,8 @@ from .task_store import TaskStore
 from .task_files import ToolError, TaskFiles
 from .dsh_agent import DshAgent
 
-TASK_HELP = '''/tool 任务内容（显式发起工具任务）
-/tool /task run 任务内容
-/tool /task in 10m 任务内容
-/tool /task at 2026-10-21T08:00 任务内容
-/tool /task every 1h 任务内容
-/tool /task daily 08:00 任务内容
-/remind in 10m 提醒内容（也支持 at/every/daily）
-/task list
-/task list all（最近 7 天历史）
-/task show 任务ID
-/task steps 任务ID
-/task runs 任务ID
-/task files 任务ID
-/task file 任务ID 相对路径
-/task cancel|pause 任务ID
-/tool /task resume|retry 任务ID
-/tool /task reply 任务ID 回答内容
-/tools
-/tools shell on|off（仅管理员）'''
+from .commands import TASK_HELP
+
 
 class Tasks:
     def __init__(self, store, llm, config, *, sender=None):
@@ -53,7 +36,7 @@ class Tasks:
         if not isinstance(instruction, str) or not instruction.strip() or estimate(instruction) > self.config.max_input_tokens:
             raise ValueError('任务内容为空或过长。')
         if kind == 'agent' and (uid != ADMIN or not self.tools.shell_enabled()):
-            raise ValueError('DSH 仅供管理员使用，请先用 /tools shell on 启用。')
+            raise ValueError('DSH 仅供管理员使用，请先用 /task shell on 启用。')
         if kind not in ('agent', 'reminder'):
             raise ValueError('任务类型必须为 agent 或 reminder。')
         if self.repo.count_active(uid) >= self.config.task_max_per_user:
@@ -97,10 +80,10 @@ class Tasks:
                 if args.startswith('shell '):
                     action = args.split()
                     if len(action) != 2 or action[1] not in ('on', 'off'):
-                        return '格式：/tools shell on 或 /tools shell off'
+                        return '格式：/task shell on 或 /task shell off'
                     self.tools.set_shell(uid, action[1] == 'on')
                     return '本机命令执行已' + ('启用（仅超级管理员任务）。' if action[1] == 'on' else '关闭。')
-                return 'Agent 后端：DeepSeek Harness（DSH）\n能力由 DSH 配置与插件管理；旧版搜索、计算及 shell 工具循环已移除。\nDSH 执行：' + ('已启用' if self.tools.shell_enabled() else '未启用') + '\n' + TASK_HELP
+                return 'Agent 后端：DeepSeek Harness（DSH）\n能力由 DSH 配置与插件管理。\nDSH 执行：' + ('已启用' if self.tools.shell_enabled() else '未启用') + '\n用法见 /help task。'
             parts = args.split(maxsplit=1)
             action, rest = (parts + [''])[:2] if parts else ('', '')
             if action == 'list':
@@ -168,7 +151,7 @@ class Tasks:
                     self.repo.finish(task['id'], run_id, 'succeeded', result='提醒：' + task['instruction'])
                     return
                 if uid != ADMIN or not self.tools.shell_enabled():
-                    raise ModelError('DSH 未获管理员执行授权，请检查 /tools shell on。')
+                    raise ModelError('DSH 未获管理员执行授权，请检查 /task shell on。')
                 # 单一有副作用的 DSH 步骤；进程中断时暂停，避免自动重复执行。
                 existing = self.repo.steps(run_id)
                 saved = json.loads(self.repo.run(run_id)['messages'])

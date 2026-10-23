@@ -1,8 +1,8 @@
 # 完整 ONNX 多音色语音
 
-三套 v2ProPlus 模型：`aoi` 悠木碧、`noto` 能登麻美子、`hayami` 早见沙织。`edge` 是原微软晓晓在线语音，由机器人直接调用。默认文字回复；`/say 内容` 单次朗读，`/voice on|off|both` 设置回复方式。
+三套 v2ProPlus 模型：`aoi` 悠木碧、`noto` 能登麻美子、`hayami` 早见沙织。`edge` 是原微软晓晓在线语音，由机器人直接调用。默认文字回复；`/voice say 内容` 单次朗读，`/voice on|off|both` 设置回复方式。
 
-`/speaker list` 查看音色，`/speaker noto` 切换自己的音色，`/speaker reset` 恢复默认。选择保存在 SQLite，重启恢复，不影响其他用户。命令仅对白名单私聊生效，不调用聊天模型。克隆语音生成失败不会自动换成 Edge。
+`/voice speaker list` 查看音色，`/voice speaker noto` 切换自己的音色，`/voice speaker reset` 恢复默认。选择保存在 SQLite，重启恢复，不影响其他用户。命令仅对白名单私聊生效，不调用聊天模型。克隆语音生成失败不会自动换成 Edge。
 
 ## 实现
 
@@ -54,13 +54,13 @@ TTS_MAX_CHARS=40
 
 此后端不需要机器人配置 `TTS_REF_AUDIO`、`TTS_PROMPT_TEXT`，参考资料由语音服务的清单选择。单次短文本优先；HTTP `/tts` 请求为 `{"speaker":"noto","text":"你好"}`，返回单声道 32kHz PCM WAV。接口保留默认 `aoi`，兼容旧客户端的额外字段。服务不记录输入正文、参考转写或模型响应；验证错误由 FastAPI 返回，推理异常仅记录异常类型。
 
-`/speaker edge` 需要服务器能访问微软 Edge 语音服务，朗读文本会发送给微软。三种 ONNX 声音的文本和参考均在本服务器处理。
+`/voice speaker edge` 需要服务器能访问微软 Edge 语音服务，朗读文本会发送给微软。三种 ONNX 声音的文本和参考均在本服务器处理。
 
 ## 更新与验收
 
 替换前备份机器人 `.env`、SQLite 和旧语音容器；保留 NapCat 会话。先验证 `/health`、各声音多次 `/tts`、切换回原声音、WAV 时长/幅度，再切换机器人配置。检查 QQ 仍在线、人设摘要哈希不变、号池仍为国内。
 
-机器人测试覆盖权限、独立持久化、重启、无自动换音色、排队请求保持原选择，以及模拟 OneBot 三种音色 `/say` 收发。模型端需额外做真实 ONNX 推理、冷/热延迟、内存/交换统计和人工试听；“生成 WAV”与“音色满意”分开验收。旧混合后端可使用原容器和 `TTS_BACKEND=gptsovits` 回滚。
+机器人测试覆盖权限、独立持久化、重启、无自动换音色、排队请求保持原选择，以及模拟 OneBot 三种音色 `/voice say` 收发。模型端需额外做真实 ONNX 推理、冷/热延迟、内存/交换统计和人工试听；“生成 WAV”与“音色满意”分开验收。旧混合后端可使用原容器和 `TTS_BACKEND=gptsovits` 回滚。
 
 ### 本次部署测量（2026-10-21）
 

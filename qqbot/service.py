@@ -6,15 +6,10 @@ from collections import defaultdict
 from .config import ADMIN, DEFAULT_PROMPT
 from .llm import ModelError
 from .emotion import advance, decay, describe, hint
-from .profile import PROFILE_HELP
-from .media import MEDIA_HELP
 from .checkin import checkin, pool
-from .prompt_upload import PROMPT_UPLOAD_HELP
 from .identity import clean_identity_echo
 from .image_generation import image_request
-
-HELP = "/help 或 /帮助\n/status 或 /状态\n/compress 或 /压缩\n/reset 或 /清空\n/emotion 或 /情绪\n/memory status\n/memory sync\n/memory clear\n/draw 图片描述（也可直接说：帮我画一张…）" + MEDIA_HELP
-ADMIN_HELP = "\n/whitelist list\n/whitelist add QQ号\n/whitelist remove QQ号\n/prompt show\n/prompt set 内容（支持多行）\n/prompt reset" + PROFILE_HELP + PROMPT_UPLOAD_HELP
+from .commands import normalize, help_text, CHAT_HELP, PROMPT_HELP
 
 
 def estimate(text):
@@ -84,6 +79,7 @@ class Service:
     async def handle(self, uid, text, *, private=True, self_id=None, prepare=None):
         if not private or uid == self_id or not self.store.allowed(uid):
             return None
+        text = normalize(text)
         if self.qwen and text.strip() in ('/stop', '停止当前任务', '取消当前任务', '先停一下'):
             return await self.qwen.stop(uid)
         async with self.locks[uid]:
@@ -121,7 +117,7 @@ class Service:
                     try:
                         await self.compress(uid)
                     except ModelError:
-                        return "自动压缩失败，原对话已保留，请用 /compress 重试。"
+                        return "自动压缩失败，原对话已保留，请用 /chat compress 重试。"
                 if self.qwen:
                     return await self.qwen_chat(uid, text, remember=True, original=original_text, media=prepare is not None)
                 memories = await self.memory.recall(uid, original_text) if self.memory else []
@@ -131,7 +127,7 @@ class Service:
                 if memories and self.input_tokens(uid, messages) > self.config.context_tokens:
                     messages = self.messages(uid, text, emotion=emotion)
                 if self.input_tokens(uid, messages) > self.config.context_tokens:
-                    return "当前上下文仍超出估算预算，请缩短输入，或使用 /reset 开始新对话。"
+                    return "当前上下文仍超出估算预算，请缩短输入，或使用 /chat reset 开始新对话。"
                 if not self.store.allowed(uid):
                     return None
                 # 普通文本及图片陪伴只请求最终正文；不提供任何工具或JSON工具协议。
@@ -165,13 +161,14 @@ class Service:
         return reply
 
     async def command(self, uid, text, *, bot_id=''):
+        text = normalize(text)
         parts = text.split(maxsplit=1)
         cmd, args = parts[0].lower(), parts[1] if len(parts) == 2 else ""
         if cmd == '/tool':
             if not self.tasks:
                 return '任务模块未启用。'
             if not args.strip():
-                return '用法：/tool 要执行的任务；或 /tool /task run 任务内容。' + ('明确任务也可以直接用自然语言提出。' if self.qwen else '普通聊天不会调用工具。')
+                return '用法：/task run 要执行的任务。' + ('明确任务也可以直接用自然语言提出。' if self.qwen else '普通聊天不会调用工具。')
             if estimate(args) > self.config.max_input_tokens:
                 return '任务内容太长，请缩短后重试。'
             nested = args.split(maxsplit=1)
@@ -187,12 +184,11 @@ class Service:
             if not self.tasks:
                 return '任务模块未启用。'
             name = {'/任务': '/task', '/提醒': '/remind', '/工具': '/tools'}.get(cmd, cmd)
-            action = (args.split(maxsplit=1) or [''])[0]
-            if name == '/task' and action in ('run', 'in', 'at', 'every', 'daily', 'resume', 'retry', 'reply'):
-                return '执行工具任务请显式使用 /tool ' + text
             return await self.tasks.command(uid, name, args, bot_id=bot_id)
         if cmd in ("/help", "/帮助"):
-            return HELP + ('\n/stop：停止当前执行\n明确的任务可直接用自然语言提出，由 QwenPaw 委托 DSH 执行。' if self.qwen else '') + ('\n/tool 内容：显式调用工具\n/task、/任务：查看和管理任务\n/remind、/提醒：定时提醒\n/tools、/工具：可用工具' if self.tasks else '') + (ADMIN_HELP + '\n签到：buddyproxy 当前账号池签到\n/pool：查看号池\n/pool cn|global：切换国内/国际号池' if uid == ADMIN else "")
+            return help_text(admin=uid == ADMIN, tasks=bool(self.tasks), agent=bool(self.qwen), section=args.strip())
+        if cmd == "/chat":
+            return CHAT_HELP
         if cmd in ("/status", "/状态"):
             identity = self.store.identity()
             return (("执行后端：QwenPaw + DeepSeek Harness（DSH）\n下列上下文数值为 QQ 本地镜像估算，运行时另行压缩。\n" if self.qwen else '') + f"模型：{self.config.model}\n"
@@ -209,7 +205,7 @@ class Service:
             if self.qwen and not (self.memory and self.memory.enabled) and args in ('status', 'sync', 'clear'):
                 return {'status': '长期记忆：QwenPaw；按用户隔离，自动检索与持久化。',
                         'sync': 'QwenPaw 自动保存会话与记忆，无需手动同步。',
-                        'clear': 'QwenPaw 模式请用 /reset 同时清空会话和长期记忆，独立任务与文件保留。'}[args]
+                        'clear': 'QwenPaw 模式请用 /chat reset 同时清空会话和长期记忆，独立任务与文件保留。'}[args]
             if args == "status":
                 return self.memory.status(uid) if self.memory else "长期记忆：none"
             if args == "sync":
@@ -222,7 +218,7 @@ class Service:
                 if self.memory:
                     await self.memory.flush(uid, limit=20)
                 return "长期记忆已与当前聊天隔离，正在/已请求外部清理；本地聊天及摘要保留。\n" + (self.memory.status(uid) if self.memory else f"待外部清理：{self.store.pending_memory(uid)} 项")
-            return "请使用 /memory status、/memory sync 或 /memory clear。"
+            return "请使用 /chat memory status|sync|clear。"
         if cmd in ("/reset", "/清空"):
             if self.qwen:
                 await self.qwen.reset(uid)
@@ -231,7 +227,7 @@ class Service:
                 await self.memory.flush(uid, limit=20)
             pending = self.store.pending_memory(uid)
             return ("你的聊天历史、摘要和情感状态已清空，旧长期记忆已隔离，统一人设保留。"
-                    + (f"\n外部清理尚有 {pending} 项待办，请恢复原记忆后端配置后用 /memory sync 重试。" if pending else ""))
+                    + (f"\n外部清理尚有 {pending} 项待办，请恢复原记忆后端配置后用 /chat memory sync 重试。" if pending else ""))
         if cmd in ("/compress", "/压缩"):
             try:
                 if self.qwen:
@@ -247,6 +243,8 @@ class Service:
             action = action_parts[0].lower() if action_parts else ""
             content = action_parts[1] if len(action_parts) == 2 else ""
             if cmd == "/prompt":
+                if not action:
+                    return PROMPT_HELP
                 if action == "show":
                     return self.store.prompt()
                 if action == "reset":

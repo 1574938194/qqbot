@@ -10,10 +10,10 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
+from .commands import normalize
 from .config import ADMIN
 
 MAX_BYTES = 512 * 1024
-PROMPT_UPLOAD_HELP = '\n/setprompt（5分钟内下一条文本或txt/md文件设为统一人设）\n/setprompt cancel'
 
 
 async def download_file(url, *, max_bytes=MAX_BYTES):
@@ -84,7 +84,7 @@ class PromptUpload:
             return None
         pure_text = all(segment.type == 'text' for segment in event.message)
         raw_text = event.get_plaintext() if pure_text else None
-        parts = raw_text.strip().split(maxsplit=1) if raw_text is not None else []
+        parts = normalize(raw_text).strip().split(maxsplit=1) if raw_text is not None else []
         command = parts[0].lower() if parts else ''
         if command == '/setprompt':
             if event.user_id != ADMIN:
@@ -94,10 +94,10 @@ class PromptUpload:
                     self.clear(bot.self_id)
                     return '已取消等待人设内容。'
                 if len(parts) > 1:
-                    return '用法：/setprompt 或 /setprompt cancel'
+                    return '用法：/prompt upload 或 /prompt cancel'
                 with self.store.db:
                     self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (self.key(bot.self_id), str(self.clock() + 300)))
-                return '请在5分钟内发送下一条非命令文本，或上传txt/md文件，将其原文设为统一system prompt。取消请用 /setprompt cancel。'
+                return '请在5分钟内发送下一条非命令文本，或上传txt/md文件，将其原文设为统一system prompt。取消请用 /prompt cancel。'
         if event.user_id != ADMIN or command.startswith('/'):
             return None
         files = [segment.data for segment in event.message if segment.type == 'file']
@@ -157,4 +157,4 @@ class PromptUpload:
                 return '统一system prompt已更新，下一轮对话生效。本次等待已结束。'
             except Exception as exc:
                 logging.getLogger(__name__).warning('prompt upload failed: %s', type(exc).__name__)
-                return '人设接收失败，原人设已保留。请在剩余等待时间内重发非空文本或512KB以内的txt/md文件（UTF-8、带BOM的UTF-16或GB18030），内容也需符合上下文长度限制。取消请用 /setprompt cancel。'
+                return '人设接收失败，原人设已保留。请在剩余等待时间内重发非空文本或512KB以内的txt/md文件（UTF-8、带BOM的UTF-16或GB18030），内容也需符合上下文长度限制。取消请用 /prompt cancel。'

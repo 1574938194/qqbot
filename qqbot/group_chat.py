@@ -4,6 +4,7 @@ from pathlib import Path
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
+from .commands import normalize
 from .config import ADMIN
 from .image_generation import ImageReply
 from .reply_wait import wait_reply
@@ -11,7 +12,7 @@ from .service import Service
 from .store import Store
 
 GROUP = 707318959
-GROUP_HELP = '群内仅回复管理员 @ 我的消息。支持文字、图片及 /help、/status、/compress、/reset；管理设置请私聊。'
+GROUP_HELP = '群内仅回复管理员 @ 我的消息。支持文字、图片及 /help、/chat status、/chat compress、/chat reset；管理设置请私聊。'
 
 
 def addressed(event, bot_id):
@@ -47,7 +48,7 @@ class GroupChat:
             return
         identity = self.private.store.identity()
         self.service.store.set_identity(name=identity.get('role_name', 'AI 助手'), nickname=identity.get('role_nickname', ''))
-        text = event.get_plaintext().strip()
+        text = normalize(event.get_plaintext()).strip()
         images = [s for s in event.message if s.type == 'image']
 
         async def send(text):

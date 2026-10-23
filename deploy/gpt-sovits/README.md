@@ -60,7 +60,7 @@ TTS_TIMEOUT=180
 TTS_MAX_CHARS=40
 ```
 
-修改机器人环境变量后重建容器。默认仍是文字，`/say 内容` 单次合成，`/voice on` 语音、`/voice both` 文字及语音、`/voice off` 文字。GPT-SoVITS 失败不会自动改为其他音色；自动语音失败时保留/补发文字。
+修改机器人环境变量后重建容器。默认仍是文字，`/voice say 内容` 单次合成，`/voice on` 语音、`/voice both` 文字及语音、`/voice off` 文字。GPT-SoVITS 失败不会自动改为其他音色；自动语音失败时保留/补发文字。
 
 服务器上的模型、参考音频、转写文本和运行数据不进入仓库。原 Windows 整合包保留，新源码放在其 `cloud-release-提交号` 目录，云端使用独立 Python 3.12 CPU 环境。
 

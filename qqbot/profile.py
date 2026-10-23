@@ -4,9 +4,9 @@ import logging
 import time
 from collections import defaultdict
 
+from .commands import normalize
 from .config import ADMIN
 
-PROFILE_HELP = '\n/setname 角色名\n/setnickname 昵称（同步QQ昵称）\n/name 昵称（同 /setnickname）\n/avatar（5分钟内下一张私聊图片设为头像）\n/avatar cancel'
 
 
 class Profile:
@@ -29,9 +29,11 @@ class Profile:
             return None
         images = [segment for segment in event.message if segment.type == 'image']
         pure_text = all(segment.type == 'text' for segment in event.message)
-        text = event.get_plaintext().strip() if pure_text else ''
+        text = normalize(event.get_plaintext()).strip() if pure_text else ''
         parts = text.split(maxsplit=1)
         command = parts[0].lower() if parts else ''
+        if command == '/profile':
+            return '只有超级管理员可以修改机器人资料。' if event.user_id != ADMIN else '用法：/profile name 名字；/profile nickname 昵称；/profile avatar [cancel]'
         if command not in ('/setname', '/setnickname', '/name', '/nickname', '/avatar') and not images:
             return None
         if event.user_id != ADMIN:
@@ -43,11 +45,11 @@ class Profile:
                     self.clear(bot.self_id)
                     return '已取消等待头像图片。'
                 if args:
-                    return '用法：/avatar 或 /avatar cancel'
+                    return '用法：/profile avatar 或 /profile avatar cancel'
                 with self.store.db:
                     self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',
                         ('avatar_pending:' + str(bot.self_id), str(self.clock() + 300)))
-                return '请在5分钟内私聊发送图片，收到的第一张图片将设为机器人头像。取消请用 /avatar cancel。'
+                return '请在5分钟内私聊发送图片，收到的第一张图片将设为机器人头像。取消请用 /profile avatar cancel。'
             if command in ('/setname', '/setnickname', '/name', '/nickname'):
                 if len(parts) == 1:
                     identity = self.store.identity()
@@ -85,4 +87,4 @@ class Profile:
                 return '机器人头像已更新。'
             except Exception as exc:
                 logging.getLogger(__name__).warning('avatar update failed: %s', type(exc).__name__)
-                return '头像更新未确认成功，本次等待已结束。请检查头像；需要重试时重新发送 /avatar。'
+                return '头像更新未确认成功，本次等待已结束。请检查头像；需要重试时重新发送 /profile avatar。'
