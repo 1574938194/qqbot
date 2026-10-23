@@ -152,7 +152,8 @@ class Service:
                 return str(exc)
 
     async def qwen_chat(self, uid, text, *, remember=False, original=None, media=False):
-        reply = await self.qwen.chat(uid, text)
+        memories = await self.memory.recall(uid, original or text) if self.memory and remember else []
+        reply = await self.qwen.chat(uid, text, memories=memories)
         if not self.store.allowed(uid):
             return None
         if remember:
@@ -160,7 +161,7 @@ class Service:
             self.store.append(uid, text, str(reply), emotion=emotion.dump() if emotion else None,
                 memory_scope=self.memory.scope(uid) if self.memory and not media else None)
             if self.memory:
-                await self.memory.flush(uid)
+                await self.memory.schedule(uid)
         return reply
 
     async def command(self, uid, text, *, bot_id=''):
@@ -200,12 +201,12 @@ class Service:
                     f"摘要：{'有' if self.store.summary(uid) else '无'}\n"
                     f"上下文：约 {self.input_tokens(uid, self.messages(uid))}/{self.config.context_tokens} tokens（估算值，非模型实测）\n"
                     f"自动压缩：超过 {self.config.compress_tokens} tokens，保留最近 {self.config.keep_rounds} 轮\n"
-                    + ("长期记忆：QwenPaw（独立工作区，自动检索与持久化）" if self.qwen else self.memory.status(uid) if self.memory else "长期记忆：none") + "\n"
+                    + (self.memory.status(uid) if self.memory and self.memory.enabled else "长期记忆：QwenPaw（独立工作区）" if self.qwen else "长期记忆：none") + "\n"
                     + (describe(decay(self.store.emotion(uid))) if self.config.emotion_enabled else "情感状态：关闭"))
         if cmd in ("/emotion", "/情绪"):
             return describe(decay(self.store.emotion(uid))) if self.config.emotion_enabled else "情感状态模块已关闭。"
         if cmd == "/memory":
-            if self.qwen and args in ('status', 'sync', 'clear'):
+            if self.qwen and not (self.memory and self.memory.enabled) and args in ('status', 'sync', 'clear'):
                 return {'status': '长期记忆：QwenPaw；按用户隔离，自动检索与持久化。',
                         'sync': 'QwenPaw 自动保存会话与记忆，无需手动同步。',
                         'clear': 'QwenPaw 模式请用 /reset 同时清空会话和长期记忆，独立任务与文件保留。'}[args]

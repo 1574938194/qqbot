@@ -10,7 +10,7 @@
 - **上下文管理**：最大 260K tokens，估算输入超过 240K 时自动摘要，保留最近 6 轮完整对话；默认不按轮数提前压缩，支持手动压缩。失败不丢数据，清空与聊天按用户串行。
 - **多模态**：DeepSeek V4.1 Flash 图片理解，支持配文和多图；头像设置等待期间优先修改头像。
 - **语音**：单次朗读或按用户开启语音回复；支持 GPT-SoVITS 克隆音色、Edge 在线合成和 Windows SAPI。
-- **长期记忆**：可选 Mem0 OSS REST / Letta blocks，默认不依赖外部记忆服务。
+- **长期记忆**：支持独立 Mem0 OSS 服务，QQ/QwenPaw 每轮自动检索、成功后后台提取用户事实，失败保留待办并重试；首次启用补建已有对话。见 [Mem0 部署](deploy/mem0/README.md)。
 - **任务代理**：可选 QwenPaw 统一会话、网页控制台与记忆，通过原生 ACP 委托官方 DeepSeek Harness（DSH）执行 shell、文件和 Chromium 浏览器任务。接入与限制见 [QwenPaw 部署](deploy/qwenpaw/README.md)。
 - **任务清理**：`/task list` 仅显示待处理任务，`/task list all` 查看保留历史；结束任务满 7 天自动清理执行记录，未投递通知保留。
 - **权限**：管理员、白名单、显式启用的本机命令；群消息、自身及未授权消息不触发模型。

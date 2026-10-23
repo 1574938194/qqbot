@@ -10,6 +10,7 @@ from qqbot.llm import ModelError
 from qqbot.memory import Memory
 from qqbot.service import Service
 from qqbot.store import Store
+from qqbot.qwenpaw_client import QwenPaw
 
 
 class Model:
@@ -106,6 +107,49 @@ async def test_memory_errors_redacted_and_permissions(setup_memory, caplog):
     await s.memory.close()
 
 
+async def test_qwenpaw_retrieves_mem0_and_seeds_recent_history_once(setup_memory):
+    requests, model_inputs = [], []
+    def memory_api(request):
+        data = json.loads(request.content) if request.content else {}
+        requests.append((request.url.path, data))
+        if request.url.path == '/search':
+            return httpx.Response(200, json={'results': [{'memory': '用户长期喜欢乌龙茶',
+                'user_id': data['filters']['user_id']}]})
+        return httpx.Response(200, json={'results': []})
+    s = setup_memory(memory_api)
+    s.config = replace(s.config, agent_backend='qwenpaw', qwenpaw_token='fixture')
+    s.qwen = QwenPaw(s.store, s.config)
+    s.store.append(ADMIN, '今晚七点有会议', '我记住了')
+    def qwen_api(request):
+        body = json.loads(request.content)
+        if request.url.path.endswith('/sync'):
+            assert body['external_memory'] is True
+            return httpx.Response(200, json={})
+        model_inputs.append(body)
+        event = {'object': 'response', 'status': 'completed', 'output': [
+            {'type': 'message', 'role': 'assistant', 'status': 'completed',
+             'content': [{'type': 'text', 'text': '我记得你喜欢乌龙茶，晚上还有会议。'}]}]}
+        return httpx.Response(200, text='data: '+json.dumps(event)+'\n\n')
+    def wire():
+        s.qwen.client = lambda **kwargs: httpx.AsyncClient(base_url='http://127.0.0.1:8088',
+            transport=httpx.MockTransport(qwen_api))
+    wire()
+    await s.handle(ADMIN, '你记得我的喜好吗')
+    text = model_inputs[0]['input'][0]['content'][0]['text']
+    assert '用户长期喜欢乌龙茶' in text and '今晚七点有会议' in text
+    assert requests[-1][0] == '/memories'
+    assert requests[-1][1]['messages'] == [{'role': 'user', 'content': '你记得我的喜好吗'}]
+    # 重启客户端后保持会话 ID，不重复灌入最近历史；仍每轮自动检索。
+    sid = model_inputs[0]['session_id']
+    s.qwen = QwenPaw(s.store, s.config); wire()
+    await s.handle(ADMIN, '我平时喝什么')
+    assert model_inputs[-1]['session_id'] == sid
+    assert '近期对话' not in model_inputs[-1]['input'][0]['content'][0]['text']
+    assert '用户长期喜欢乌龙茶' in model_inputs[-1]['input'][0]['content'][0]['text']
+    assert 'mem0' in await s.handle(ADMIN, '/memory status')
+    await s.memory.close()
+
+
 async def test_letta_block_create_update_recall_delete(setup_memory):
     blocks, calls = {}, []
     def handle(request):
@@ -168,4 +212,53 @@ async def test_reset_waits_for_external_write(setup_memory):
     await asyncio.gather(chat, reset)
     assert not s.store.history(ADMIN) and not s.store.emotion(ADMIN)
     assert s.memory.scope(ADMIN) != old_scope
+    await s.memory.close()
+
+
+async def test_background_backfill_is_once_and_retries_without_chat(setup_memory):
+    posted = []
+    def api(request):
+        if request.method == 'POST' and request.url.path == '/memories':
+            posted.append(json.loads(request.content))
+        return httpx.Response(200, json={'results': []})
+    s = setup_memory(api)
+    s.store.append(ADMIN, '我喜欢猫', '助手虚构经历不能写入')
+    s.store.append(ADMIN, '/help', '命令结果不能写入')
+    s.memory.start()
+    for _ in range(100):
+        if posted:
+            break
+        await asyncio.sleep(.01)
+    assert len(posted) == 1
+    assert '我喜欢猫' in str(posted) and '助手虚构经历' not in str(posted) and '/help' not in str(posted)
+    assert s.store.pending_memory(ADMIN) == 0
+    await s.memory.close()
+    s.memory.backfill()
+    assert s.store.pending_memory(ADMIN) == 0
+    s.store.clear_memory(ADMIN)
+    s.memory.backfill()
+    assert all(row[2] == 'clear' for row in s.store.memory_jobs(ADMIN, s.memory.identity, 10))
+
+
+async def test_background_retries_failed_write_without_new_message(setup_memory):
+    failed, attempts = True, 0
+    def api(request):
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(503 if failed else 200, json={'results': []})
+    s = setup_memory(api)
+    s.store.append(ADMIN, '我喜欢乌龙茶', '好的')
+    s.memory.start()
+    for _ in range(100):
+        if ADMIN in s.memory.errors:
+            break
+        await asyncio.sleep(.01)
+    assert s.store.pending_memory(ADMIN) == 1
+    failed = False
+    # 不发送新消息，也不手工 flush/wake；等待实际的周期重试。
+    for _ in range(65):
+        if s.store.pending_memory(ADMIN) == 0:
+            break
+        await asyncio.sleep(.1)
+    assert attempts >= 2 and s.store.pending_memory(ADMIN) == 0
     await s.memory.close()

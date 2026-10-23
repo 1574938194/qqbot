@@ -77,7 +77,8 @@ async def sync(request: Request):
     if workspace.is_symlink() or not workspace.resolve().is_relative_to(root):
         raise HTTPException(409, '工作区路径异常。')
     execute = uid == ADMIN and data.get('execute') is True
-    fingerprint = hashlib.sha256(json.dumps(['gateway-v2', prompt, identity, execute], ensure_ascii=False).encode()).hexdigest()
+    external_memory = data.get('external_memory') is True
+    fingerprint = hashlib.sha256(json.dumps(['gateway-v3', prompt, identity, execute, external_memory], ensure_ascii=False).encode()).hexdigest()
     async with lock:
         manager = request.app.state.multi_agent_manager
         marker = workspace / '.qqbot-sync'
@@ -108,6 +109,8 @@ async def sync(request: Request):
         template = load_agent_config('default')
         agent = load_agent_config(agent_id)
         agent.running = template.running.model_copy(deep=True)
+        if external_memory:
+            agent.running.memory_manager_backend = 'none'
         agent.active_model = template.active_model.model_copy(deep=True)
         agent.id, agent.name, agent.workspace_dir = agent_id, str(identity.get('role_name') or 'AI 助手'), str(workspace)
         agent.project_dir = str(workspace / 'files')

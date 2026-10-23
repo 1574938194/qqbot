@@ -97,6 +97,7 @@ async def startup():
     media = Media(store, llm, config)
     tasks = Tasks(store, llm, config, sender=task_sender) if config.tasks_enabled else None
     service = Service(store, llm, config, Memory(store, llm, config), tasks, ImageGenerator(config))
+    service.memory.start()
     if tasks:
         tasks.start()
 
