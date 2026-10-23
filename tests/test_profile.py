@@ -25,8 +25,8 @@ async def test_identity_commands_persist_without_changing_source_prompt(tmp_path
         store.close()
         store = Store(path)
         assert store.identity() == {'role_name': '爱', 'role_nickname': '小爱'}
-        assert '"role_name": "爱"' in store.model_prompt()
-        assert '"role_nickname": "小爱"' in store.model_prompt()
+        assert '"正式名字": "爱"' in store.model_prompt()
+        assert '"昵称": "小爱"' in store.model_prompt()
         assert original in store.model_prompt()
         assert store.model_prompt().startswith('管理员设置的当前身份')
         bot.fail = True
@@ -53,12 +53,13 @@ async def test_current_name_overrides_old_persona_and_history(tmp_path):
         messages = Service(store, None, Settings()).messages(ADMIN, '你叫什么名字')
         wire = json_messages(messages, CONTROL_TOOLS)
         assert messages[-2]['role'] == 'assistant'
-        assert '当前身份资料已同步' in messages[-2]['content']
-        assert '梦梦' in messages[-2]['content']
+        assert messages[-2]['content'] == '我叫小暖。'
+        assert '当前身份资料已同步' not in str(messages)
         system = wire[0]['content']
-        assert system.index('"role_name": "梦梦"') < system.index(original)
-        assert system.rindex('"role_name": "梦梦"') > system.index(original)
-        assert '以 role_name 自我介绍' in system
+        assert system.index('"正式名字": "梦梦"') < system.index(original)
+        assert system.rindex('"正式名字": "梦梦"') > system.index(original)
+        assert '以当前正式名字自我介绍' in system
+        assert 'role_name' not in system and 'role_nickname' not in system
         assert store.prompt() == original
         assert store.identity()['role_nickname'] == '姚菱心'
         assert store.history(ADMIN)[0][2] == '我叫小暖。'
