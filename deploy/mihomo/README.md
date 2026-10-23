@@ -27,3 +27,9 @@ curl --proxy http://127.0.0.1:7890 https://www.google.com/generate_204 -o /dev/n
 安装不启用 TUN、不更改系统 DNS/默认路由，也不自动修改 QQBot、buddyproxy 或 DSH 的联网配置。需要代理的应用应单独配置上述地址；直连本机服务应保留在 NO_PROXY 中，应用是否读取环境代理由其自身配置决定。
 
 当前节点为导入时快照，并通过健康检查选择低延迟节点；没有启用完整订阅定期刷新。节点变更时需受控更新配置并先执行 `mihomo -t -d /var/lib/mihomo -f /etc/mihomo/config.yaml` 校验。共享出口可能耗尽 GitHub 未认证 API 限额，这与代理网络连通不同。
+
+## 绕过中国大陆
+
+以 root 运行 `bypass_cn.py`，为已安装的 Mihomo 应用分流规则：本机、局域网、大陆域名和大陆 IP 直连，其余走原代理组。规则使用 MetaCubeX 官方 cn-domain/cn-ip MRS 集合，缓存到 `/var/lib/mihomo/rules/`，每日通过代理自动更新。代理节点和控制密钥保持原值。
+
+脚本先备份私密配置，再执行原生 `mihomo -t` 校验并重启；无法确认生效则恢复备份。可通过控制接口的连接记录验证：国内请求命中 `cn-domain` 且链路为 `DIRECT`，国外请求命中 `MATCH` 且链路为代理。
