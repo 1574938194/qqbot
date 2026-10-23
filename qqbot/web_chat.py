@@ -20,6 +20,7 @@ from .prompt_upload import MAX_BYTES, decode_text
 from .media import image_data
 from .reply_wait import wait_reply
 from .web_page import PAGE
+from .image_generation import ImageReply
 
 WEB_BOT_ID = '99990008'  # 人设等待独立于 QQ；不用于任务投递。
 
@@ -65,7 +66,7 @@ class WebChat:
         headers = self.headers()
         headers['Content-Security-Policy'] = (
             f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; "
-            "connect-src 'self'; img-src blob:; media-src data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
+            "connect-src 'self'; img-src blob: data:; media-src data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'")
         return HTMLResponse(PAGE.replace('__NONCE__', nonce).replace('__TOKEN__', self.token), headers=headers)
 
     async def state(self, request: Request):
@@ -106,7 +107,7 @@ class WebChat:
             raise HTTPException(409, '网页上一条请求仍在处理中，请等待。')
         async with self.lock:
             try:
-                async with asyncio.timeout(max(service.config.chat_timeout, service.config.tts_timeout) + 30):
+                async with asyncio.timeout(max(service.config.chat_timeout, service.config.tts_timeout, service.config.image_timeout) + 30):
                     result = await self.dispatch(service, text, files)
             except TimeoutError:
                 result = {'reply': '本次请求超时，请先检查历史或 /task list，避免重复提交。', 'audio': []}
@@ -202,4 +203,5 @@ class WebChat:
 
             # 实际 QQ bot_id 保证显式创建的任务仍可向 QQ 投递；离线也能普通聊天。
             reply = await wait_reply(service, ADMIN, text, int(live_bot.self_id) if live_bot else None, notify, prepare=prepare)
-        return {'reply': str(reply or '未返回文本。'), 'audio': audio}
+        return {'reply': str(reply or '未返回文本。'), 'audio': audio,
+                'images': [base64.b64encode(raw).decode('ascii') for raw in reply.images] if isinstance(reply, ImageReply) else []}

@@ -11,8 +11,9 @@ from .media import MEDIA_HELP
 from .checkin import checkin, pool
 from .prompt_upload import PROMPT_UPLOAD_HELP
 from .identity import clean_identity_echo
+from .image_generation import image_request
 
-HELP = "/help 或 /帮助\n/status 或 /状态\n/compress 或 /压缩\n/reset 或 /清空\n/emotion 或 /情绪\n/memory status\n/memory sync\n/memory clear" + MEDIA_HELP
+HELP = "/help 或 /帮助\n/status 或 /状态\n/compress 或 /压缩\n/reset 或 /清空\n/emotion 或 /情绪\n/memory status\n/memory sync\n/memory clear\n/draw 图片描述（也可直接说：帮我画一张…）" + MEDIA_HELP
 ADMIN_HELP = "\n/whitelist list\n/whitelist add QQ号\n/whitelist remove QQ号\n/prompt show\n/prompt set 内容（支持多行）\n/prompt reset" + PROFILE_HELP + PROMPT_UPLOAD_HELP
 
 
@@ -30,10 +31,11 @@ class ChatReply(str):
 
 
 class Service:
-    def __init__(self, store, llm, config, memory=None, tasks=None):
+    def __init__(self, store, llm, config, memory=None, tasks=None, image_generator=None):
         self.store, self.llm, self.config = store, llm, config
         self.memory = memory
         self.tasks = tasks
+        self.image_generator = image_generator
         self.locks = defaultdict(asyncio.Lock)
 
     def input_tokens(self, uid, messages):
@@ -86,6 +88,16 @@ class Service:
                     if uid != ADMIN:
                         return '只有超级管理员可以使用此命令。'
                     return await checkin(self.config)
+                drawing = image_request(text) if prepare is None else None
+                if drawing and self.image_generator:
+                    if estimate(drawing) > self.config.max_input_tokens:
+                        return '图片描述太长，请缩短后再发。'
+                    reply = await self.image_generator.generate(drawing)
+                    if not self.store.allowed(uid):
+                        return None
+                    if not text.lstrip().startswith('/'):
+                        self.store.append(uid, text, str(reply))
+                    return reply
                 if text.lstrip().startswith("/"):
                     return await self.command(uid, text.strip(), bot_id=str(self_id or ''))
                 if not text.strip() and prepare is None:

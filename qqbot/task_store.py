@@ -208,6 +208,15 @@ class TaskStore:
             self.db.execute("UPDATE task_runs SET state='queued',error='',result='',messages=?,notified=1,updated_at=? WHERE id=?", (encoded(messages), time.time(), run['id']))
             self.db.execute("UPDATE tasks SET state='scheduled',next_run=?,updated_at=? WHERE id=?", (time.time(), time.time(), task_id))
 
+    def migrate_dsh(self):
+        """仅升级首次暂停旧 agent，保留旧步骤和提醒，不自动重放副作用。"""
+        if self.db.execute("SELECT 1 FROM settings WHERE key='dsh_migrated'").fetchone():
+            return
+        with self.db:
+            self.db.execute("UPDATE task_runs SET state='paused',error='已迁移 DSH，请检查旧任务副作用后显式恢复。',notified=1 WHERE task_id IN (SELECT id FROM tasks WHERE kind='agent' AND state IN ('scheduled','running','paused','waiting_input')) AND state IN ('queued','running','waiting_input')")
+            self.db.execute("UPDATE tasks SET state='paused' WHERE kind='agent' AND state IN ('scheduled','running','waiting_input')")
+            self.db.execute("INSERT INTO settings VALUES ('dsh_migrated','true')")
+
     def recover(self):
         """恢复仅发生在机器人启动时；未知副作用暂停，其余从已存检查点恢复。"""
         for task in self.rows("SELECT * FROM tasks WHERE state='running'"):

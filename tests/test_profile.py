@@ -40,8 +40,6 @@ async def test_identity_commands_persist_without_changing_source_prompt(tmp_path
 async def test_current_name_overrides_old_persona_and_history(tmp_path):
     from qqbot.config import Settings
     from qqbot.service import Service
-    from qqbot.llm import json_messages
-    from qqbot.tasks import CONTROL_TOOLS
     store = Store(str(tmp_path / 'db'))
     try:
         original = '你是小暖，按这个名字自我介绍。'
@@ -51,7 +49,7 @@ async def test_current_name_overrides_old_persona_and_history(tmp_path):
         profile = Profile(store)
         assert '「梦梦」' in await profile.handle(Bot(), event('/setname 梦梦'))
         messages = Service(store, None, Settings()).messages(ADMIN, '你叫什么名字')
-        wire = json_messages(messages, CONTROL_TOOLS)
+        wire = messages
         assert messages[-2]['role'] == 'assistant'
         assert messages[-2]['content'] == '我叫小暖。'
         assert '当前身份资料已同步' not in str(messages)

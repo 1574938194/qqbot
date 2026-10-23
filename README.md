@@ -11,7 +11,7 @@
 - **多模态**：DeepSeek V4.1 Flash 图片理解，支持配文和多图；头像设置等待期间优先修改头像。
 - **语音**：单次朗读或按用户开启语音回复；支持 GPT-SoVITS 克隆音色、Edge 在线合成和 Windows SAPI。
 - **长期记忆**：可选 Mem0 OSS REST / Letta blocks，默认不依赖外部记忆服务。
-- **任务代理**：定时提醒、公开网页检索、计算、文件、笔记、多步工具执行、状态查询和检查点恢复。
+- **任务代理**：官方 DeepSeek Harness（DSH）独立容器，支持 shell、文件、Chromium 浏览器和公开 Git 仓库；保留提醒、任务状态和会话恢复。
 - **任务清理**：`/task list` 仅显示待处理任务，`/task list all` 查看保留历史；结束任务满 7 天自动清理执行记录，未投递通知保留。
 - **权限**：管理员、白名单、显式启用的本机命令；群消息、自身及未授权消息不触发模型。
 - **网页调试**：通过 SSH 转发访问简单聊天页，复用管理员上下文，QQ 离线时也能聊天。
@@ -96,7 +96,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 | `/speaker reset` | 恢复默认音色；不改变文字/语音回复模式 |
 | `/remind in 10m 喝水` | 10分钟后提醒，也支持 at/every/daily |
 | `/tool /task run 计算17乘以3，将结果保存为result.txt` | 创建后台多步任务 |
-| `/tool 查询资料并整理报告` | 显式启用工具；普通聊天和图片回复不调用工具 |
+| `/tool 查询资料并整理报告` | 显式启用工具；普通聊天不调用通用工具；明确的画图请求走图片接口 |
 | `/task list`、`/task show ID`、`/task steps ID` | 查询任务与执行进度 |
 | `/task pause ID`、`/task cancel ID`；`/tool /task resume ID`、`/tool /task retry ID` | 暂停、取消、显式恢复或重试工具任务 |
 
@@ -130,7 +130,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 完整变量见 [`.env.example`](.env.example)，命令、任务恢复语义、Mem0/Letta 和排错见 [详细运行说明](docs/OPERATIONS.md)。
 
 - 聊天默认 `deepseek-v4.1-flash`，识图默认跟随聊天模型，可用 `VISION_MODEL` 单独覆盖。
-- 默认超过20轮或预计输入超过12,000 tokens时压缩，保留最近6轮；token均为估算值。
+- 默认最大上下文260K，预计输入超过240K tokens时压缩，保留最近6轮；token均为估算值。
 - 图片默认每条最多3张、每张5 MiB；不持久保存原图，识图描述作为标注来源的聊天资料保存。
 - 语音默认关闭；`TTS_BACKEND=auto` 优先 Edge 在线语音，失败回退 Windows SAPI。设置 `sapi` 可仅本地合成。
 - `MEMORY_BACKEND=none` 为默认值；接入 Mem0/Letta 需自行部署服务并配置独立密钥。
@@ -142,7 +142,9 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 
 图片会发送到配置的视觉模型服务。Edge 合成会把待朗读文本发送到微软语音服务；本地 SAPI 可避免这部分云端传输。外部记忆仅在显式启用后同步。
 
-**本机命令工具默认关闭。** 管理员开启后，PowerShell/Python 具有机器人账户的本机权限，不是沙箱；任务文件工具的目录限制不能约束管理员脚本。只在信任任务内容时开启；取消不能撤销已经产生的副作用。
+**DSH 默认关闭，仅供超级管理员使用。** `/tools shell on` 开启后，任务在独立非 root Linux 容器执行，可运行 Python/bash 和 Chromium；不挂载机器人数据库、人设、Docker socket。取消不能撤销已发生的操作。部署与插件边界见 [DSH 配置](deploy/dsh/README.md)。
+
+发送“帮我画一张雨夜街道的插画”或 `/draw 雨夜街道的插画` 可生成图片并直接显示在 QQ/网页，默认 `hunyuan-image-alpha`；明确画图请求不需要 `/tool`。生成图只展示在当前消息，不保存原图或签名 URL 到聊天历史。
 
 ## 验证
 
@@ -151,7 +153,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-123项机器人自动测试已通过，另有14项 ONNX 停顿、语义和采样测试，覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音、模拟 OneBot 收发和网页入口的访问限制、共用上下文、并发清空、图片识别、txt/md原文人设及编码/大小验证。真实 buddyproxy 聊天、摘要、多步工具、DeepSeek 识图及真实 QQ 图片回复、语音播放也已验证。Mem0/Letta 使用接口契约测试，尚未宣称真实记忆服务验收。
+自动测试覆盖权限、上下文、记忆契约、情感状态、任务恢复、图片、语音、模拟 OneBot 收发和网页访问限制。DSH 使用官方 SDK 与独立持久会话；Mem0/Letta 仍以接口契约测试为主。
 
 以下脚本显式调用真实服务，使用测试输入和临时数据库，不向 QQ 发送消息：
 

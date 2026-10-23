@@ -16,7 +16,7 @@ MAX_BYTES = 512 * 1024
 PROMPT_UPLOAD_HELP = '\n/setprompt（5分钟内下一条文本或txt/md文件设为统一人设）\n/setprompt cancel'
 
 
-async def download_file(url):
+async def download_file(url, *, max_bytes=MAX_BYTES):
     async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
         for _ in range(4):
             parsed = urlsplit(url)
@@ -36,12 +36,12 @@ async def download_file(url):
                     url = urljoin(url, response.headers.get('location', ''))
                     continue
                 response.raise_for_status()
-                if int(response.headers.get('content-length', '0')) > MAX_BYTES:
+                if int(response.headers.get('content-length', '0')) > max_bytes:
                     raise ValueError('file too large')
                 data = bytearray()
                 async for chunk in response.aiter_bytes():
                     data.extend(chunk)
-                    if len(data) > MAX_BYTES:
+                    if len(data) > max_bytes:
                         raise ValueError('file too large')
                 return bytes(data)
     raise ValueError('too many redirects')

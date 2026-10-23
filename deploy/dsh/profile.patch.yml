@@ -1,0 +1,35 @@
+- id: session-log-deepseek
+  config:
+    enabled: false
+- id: plugin-package-inventory-deepseek
+  disabled: true
+- id: tool-fs
+  config:
+    read: true
+    readImage: true
+    write: true
+    edit: true
+- id: llm-deepseek
+  disabled: true
+- insert:
+    - id: llm-pi-ai
+      name: '@deepseek-ai/dsh-llm-pi-ai'
+      config:
+        providers:
+          buddyproxy:
+            api: openai-completions
+            apiKeyEnv: DSH_MODEL_API_KEY
+            baseURL: !!js process.env.DSH_MODEL_BASE_URL
+            models:
+              - id: deepseek-v4.1-flash
+                contextWindow: 260000
+                maxTokens: 6000
+                input: [text, image]
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+    - id: chrome-browser
+      name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp'
+      config:
+        mode: launch
+        headless: true
+        executablePath: /usr/local/bin/qqbot-chromium

@@ -1,0 +1,12 @@
+# 可选：配置专用 GITHUB_TOKEN 后复制为 /state/github.patch.yml。
+# 默认只读，不随主 profile 自动启用。
+- insert:
+    - id: mcp-github
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: github
+        transport: streamable-http
+        url: https://api.githubcopilot.com/mcp/readonly
+        headers:
+          Authorization: !!js '`Bearer ${process.env.GITHUB_TOKEN}`'
+        failOnStartupError: true

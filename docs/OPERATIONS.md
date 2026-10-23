@@ -87,7 +87,6 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `LLM_TIMEOUT` | `90` | 单次模型请求超时秒数；超时不自动重试，明确限流按下述配置退避 |
 | `CHAT_TIMEOUT` | `90` | QQ 请求总等待秒数，包含排队、压缩、限流及工具；到期取消在途请求 |
 | `CHAT_NOTICE_SECONDS` | `8` | 尚未处理完时发送一次等待提示，须小于总等待上限 |
-| `LLM_TOOL_MODE` | `json` | `json` 结构化工具协议；`single` 单函数入口；`native` 原生多工具 API |
 | `LLM_MIN_INTERVAL` | `1` | 本进程模型请求最小启动间隔秒数 |
 | `LLM_RATE_BACKOFF` | `30` | 明确上游限流时首次退避秒数，下一次加倍，最多 120 秒 |
 | `LLM_RATE_RETRIES` | `2` | 仅对明确 429/代理 `rate_limited` 重试次数，设 0 禁用 |
@@ -111,58 +110,51 @@ Token 是 OneBot 通信凭据，独立于 WebUI 登录 Token 和模型 API Key�
 | `TASK_WORKSPACE` | `data/tasks` | 任务成果目录，按用户 QQ 和任务 ID 隔离 |
 | `TASK_POLL_SECONDS` | `1` | 调度和通知轮询间隔秒数 |
 | `TASK_CONCURRENCY` | `2` | 总任务并发数，每个用户最多同时执行 1 个 |
-| `TASK_MAX_STEPS` | `24` | 单轮任务的模型调用次数上限 |
 | `TASK_MAX_PER_USER` | `50` | 每个用户的未结束任务数量上限 |
-| `TASK_TOOL_TIMEOUT` | `60` | 单次工具执行/命令超时秒数 |
 | `TASK_RUN_TIMEOUT` | `900` | 单轮后台任务总执行时间上限秒数 |
 | `TASK_RESULT_CHARS` | `10000` | 单次工具结果进入模型上下文的字符上限，完整长结果另存文件 |
-| `WEB_SEARCH_KEY` | 空 | 可选 Brave Search API key；留空使用公共 RSS 搜索 |
+
+| 新配置 | 默认值 | 说明 |
+|---|---|---|
+| `DSH_BASE_URL` | `http://127.0.0.1:32128` | 只允许本机 HTTP 根地址 |
+| `DSH_TOKEN` | 空 | 与 DSH 服务相同的独立随机令牌 |
+| `IMAGE_MODEL` | `hunyuan-image-alpha` | buddyproxy 图片生成模型 |
+| `IMAGE_TIMEOUT` | `150` | 生成和下载图片总超时秒数 |
 
 ## 后台任务、定时主动执行和工具
 
 管理员人设上传：`/setprompt` 开启5分钟接收窗口，下一条非命令私聊文本或 `.txt`/`.md` 文件替换统一人设，成功后关闭窗口，`/setprompt cancel` 取消。等待状态持久化，重启后保留原截止时间。文件支持普通文件消息及OneBot `offline_file` 通知，通过NapCat私聊文件直链获取正文；不读取消息中提供的本地文件路径。最大512KB，支持UTF-8、带BOM的UTF-16和GB18030，超过人设上下文预算、空白、二进制、下载失败均保留旧人设，剩余时间内可重发。原文与确认不进入聊天/记忆，不调用LLM，也不回显提示词正文。五分钟过期后的普通文本恢复聊天处理；群消息及其他账号不会更新人设。
 
-任务模块是机器人自身的服务，运行在 NoneBot 进程内，不依赖 Codex 聊天或桌面自动化。支持「模型规划 → 工具执行 → 检查结果 → 继续规划」的多步循环，将任务、执行轮次、工具参数和结果、检查点及通知游标保存到 SQLite。它提供类似任务代理的基础执行能力，不包含 OpenClaw 的全部渠道和插件生态。
+机器人保留 SQLite 任务调度、提醒、任务查询、成果文件和 QQ 通知，agent 执行改由官方 DeepSeek Harness 独立服务负责，自制 JSON 工具协议、搜索工具、笔记工具和模型循环已移除。旧笔记和步骤保留用于审计，不再作为工具开放。首次升级暂停旧 agent 任务，提醒照常；请核对旧操作后显式恢复，避免重放副作用。
 
-只有 `/tool 内容` 才启用模型工具协议。普通文字和图片回复走纯对话接口，不提供工具、不要求JSON，也不把聊天理解为任务。可以发送 `/tool 10分钟后提醒我喝水`、`/tool 帮我查找 Python 官方安装说明，整理步骤并保存报告`。`/task list` 等管理命令和 `/remind` 保持可用；创建、恢复和重试工具任务需要显式前缀，格式如下：
+管理员先执行 `/tools shell on`，再通过 `/tool 任务描述` 创建后台 DSH 任务。其他白名单用户仍可使用提醒，不能使用 DSH。普通对话不提供通用工具。明确的“帮我画一张…”或 `/draw 描述` 直接调用 Images API，图片以 QQ 图片段或网页图片显示；生成失败不写成功历史。
 
 ```text
-/tool /task run 计算(17+25)*3，将结果保存为result.txt并读取确认
-/tool /task in 10m 查找我关注主题的新资料并给出来源
-/tool /task at 2026-10-21T08:00 整理今天的待办建议
-/tool /task every 1h 查询指定公开网页的变化并报告
-/tool /task daily 08:00 根据我的任务笔记整理今日计划
-/remind in 10m 喝水
-/remind daily 23:00 准备休息
+/tools shell on
+/tool 计算(17+25)*3，将结果保存为result.txt并读取确认
+/tool 打开 https://example.com，读取标题并保存截图到 screenshot.png
 /task list
-/task list all
 /task show 任务ID
 /task steps 任务ID
-/task runs 任务ID
 /task files 任务ID
 /task file 任务ID result.txt
 /task pause 任务ID
-/tool /task resume 任务ID
 /task cancel 任务ID
+/tool /task resume 任务ID
 /tool /task retry 任务ID
-/tool /task reply 任务ID 补充信息
+/remind in 10m 喝水
+/tools shell off
 ```
 
-`at` 使用 ISO 日期时间；无时区时按 **Asia/Shanghai（UTC+8）**，如需空格日期请改用 `T`。`in/every` 使用 `30s`、`10m`、`2h`、`1d`；固定间隔至少 60 秒。所有显示时间明确为北京时间。每日任务按该时区运行，不依赖 Windows 系统时区。停机错过的任务启动后补执行一次，周期任务跳过积压时段，不连续补发所有错过的轮次；单个周期任务不会重叠执行。
+`resume` 使用相同 DSH 会话，恢复后必须核对实际副作用；`retry` 新开一轮。DSH 的详细模型/工具事件保存在独立 state 中，机器人步骤表记录整个 DSH 调用。进程中断且副作用不确定时暂停。浏览器恢复会新建实例，不承诺保留登录页面。关闭开关阻止后续任务，已有任务需 `/task cancel ID` 停止；已完成操作无法撤销。
 
-`scheduled` 表示等待，`running` 表示执行中，`waiting_input` 表示等待用户回答，`paused` 表示暂停，`succeeded/failed/cancelled` 表示本轮成功结束、失败或取消。周期任务完成一轮后回到 `scheduled`，可通过 `show/runs` 查看每轮状态与结果。缺少必需信息时模型可调用 `ask_user` 暂停，机器人发出问题；使用 `/task reply ID 内容` 后从原检查点继续。模型故障导致失败时可用 `resume` 从同一轮的已保存检查点继续，已完成的工具不会因恢复而自动重放；`retry` 会从头新开一轮。
+DSH 在独立非 root 容器执行，只有任务成果目录与机器人共享，不挂载聊天数据库、人设或宿主机 Docker socket。容器可联网、可运行 shell，管理员应只提交可信任务；容器不是每个任务独立的安全边界。模型代理凭据在 DSH 容器内，不能把不可信代码当作无风险脚本执行。
 
-工具包括当前时间、有界计算、按用户持久化笔记（`note_set/note_get/note_list`）、公开网页搜索/读取、任务文件读写，以及管理员可启用的 PowerShell/Python。普通聊天只暴露任务控制和轻量工具，复杂执行会进入后台任务。文件工具仅能访问该用户的该任务目录；正文保存为 UTF-8，长文本可按 offset/length 分段读取。长工具结果另存 `.tool-results/`，执行上下文超出预算前会归纳检查点，工具审计和原文件保留。模型失败时不清除步骤，可查看后 `retry` 从头开新一轮执行；`resume` 用于暂停或失败任务的同一轮恢复。
+提醒、周期任务、重启恢复、过期清理和 `/task` 查询继续可用。`/reset` 仅清空陪伴历史、摘要和情感状态，保留任务与成果。任务结果不加入陪伴历史。QQ 断线时任务可继续，通知落盘后重试；QQ 接收成功但响应丢失时仍可能重复通知。
 
-默认 `json` 模式通过 AsyncOpenAI 的普通聊天通道传输结构化工具计划，由代码解析后调用真实工具，不把协议 JSON 发给 QQ；这便于兼容不同代理。工具目录只传签名和说明，`tool_help` 可按需获取完整参数。若代理已可靠支持原生函数调用，可选择 `native`；`single` 则把全部工具封装为一个 `invoke_tool` 函数，内部权限和能力相同。三种模式均只取最终正文，不使用 `reasoning_content`。模型输出格式错误、参数越权或未知工具会拒绝执行并保留任务步骤。
+详见 [DSH 部署和插件说明](../deploy/dsh/README.md)。公开 Git 仓库可通过 git/浏览器访问；私有 GitHub 和额外 MCP 需要独立配置凭据，当前不会自动读取桌面登录或 Git 凭据。
 
-上游明确限流时，共享冷却会避免本进程的聊天与任务继续密集请求；SDK 自动重试关闭，只对 429 或代理明确标注的 `rate_limited` 做有界退避。退避不会重放已执行的工具；若仍失败，任务标记失败并保留检查点，可等代理恢复后 `/task resume ID`。认证失败、超时、空回复和其他服务器错误不自动重试。
-
-普通聊天兼容模型直接返回自然语言正文，避免闲聊因未封装为 JSON 被拒绝；结构化工具请求仍严格解析，损坏的 JSON/工具计划不作为正文发送。后台任务仍要求完整结构化协议，避免将未执行的计划当作完成结果。
-
-网页工具仅读取公开 HTTP(S) 80/443 端口，解析 DNS 后固定连接到经过检查的公网 IP，每次重定向重新检查，拒绝本机/私网/带凭据地址，文本响应上限 1 MiB。默认使用无 Key 的公共 Bing RSS 搜索，其可用性和结果质量取决于地区及搜索服务；可设置 `WEB_SEARCH_KEY` 使用 [Brave Search 官方 Web API](https://api-dashboard.search.brave.com/app/documentation/web-search/get-started)。模型拿到的网页/文件是资料，不作为授权指令；默认日志不输出搜索结果或命令正文。
-
-### 管理员本机命令
+## 管理员本机命令
 
 超级管理员先发送 `/tools shell on`，之后其任务可调用 `shell` 执行 PowerShell 或 Python；`/tools shell off` 关闭，开关跨重启保存。普通白名单用户即使在人设或任务中要求也不能调用或启用 shell。工具在任务目录启动隐藏子进程，限制执行时长、收集退出码与有界输出，取消/超时会终止该工具拥有的进程树；子进程环境不继承机器人和模型密钥变量。
 
@@ -254,10 +246,8 @@ token 均为**估算值**：非 ASCII 每字符约 1.5 token、ASCII 每四字�
 .\.venv\Scripts\python.exe -m pytest -q
 # 显式向本机代理发起真实聊天和摘要，不连接 QQ，不写正式数据库
 .\.venv\Scripts\python.exe -m scripts.verify_proxy
-# 真实模型多步工具调用、文件成果、笔记、任务状态及 /tool 显式定时创建
+# 真实 DSH 任务验收，不使用正式数据库，不向 QQ 投递
 .\.venv\Scripts\python.exe -m scripts.verify_tasks
-# 真实公开网页读取及搜索，不连接 QQ
-.\.venv\Scripts\python.exe -m scripts.verify_web
 # 自造测试图的真实视觉识别，以及固定短句的真实语音合成（不向QQ发送）
 .\.venv\Scripts\python.exe -m scripts.verify_multimedia
 .\.venv\Scripts\python.exe -m scripts.verify_multimedia voice

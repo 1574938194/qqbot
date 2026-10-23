@@ -233,3 +233,14 @@ async def test_invalid_files_preserve_prompt_and_waiting(setup):
         assert (await client.post('/debug/chat', json={'text': '/setprompt', 'files': [attachment('x.md', b'a')]})).status_code == 400
         assert service.store.prompt() == '原人设' and not service.store.history(ADMIN)
         assert not service.llm.complete.called
+
+async def test_generated_image_web_response(setup):
+    from qqbot.image_generation import ImageReply
+    app, web, service, *_ = setup
+    service.image_generator = SimpleNamespace(generate=AsyncMock(return_value=ImageReply('图片已生成。',[b'jpeg-test'])))
+    async with client_for(app) as client:
+        response=await client.post('/debug/chat',headers={'X-Debug-Token':web.token},json={'text':'帮我画一张蓝色天空'})
+        assert response.status_code==200
+        assert response.json()['images']==[base64.b64encode(b'jpeg-test').decode()]
+        assert not service.llm.complete.called
+        assert service.store.history(ADMIN)[-1][1:]==('帮我画一张蓝色天空','图片已生成。')

@@ -21,7 +21,7 @@ docker build \
 4. NapCat 的 WebUI、HTTP/WS 监听仅绑定本机，通过 SSH 转发访问 WebUI。设置 WS 客户端为 `ws://127.0.0.1:8080/onebot/v11/`，Token 与项目一致。
 5. 检查健康接口、QQ账号连接、管理员命令、真实聊天、图片和语音。
 
-Linux 使用 `TTS_BACKEND=edge`，无 Windows SAPI 回退。Python 命令工具可用，PowerShell 需要另行安装pwsh。shell执行的“本机”是机器人容器，不是宿主机；不要挂载Docker socket。
+Linux 无 Windows SAPI 回退，可使用 Edge 或独立 ONNX 语音服务。agent 使用 [DSH 独立容器](../deploy/dsh/README.md)，shell 的“本机”是 DSH 容器；不要挂载 Docker socket。
 
 网页聊天调试复用机器人端口，入口为 `/debug`。在电脑上用 `ssh -N -L 127.0.0.1:18080:127.0.0.1:8080 root@服务器地址` 建立转发，然后访问 `http://127.0.0.1:18080/debug`（密钥登录加 `-i 密钥路径`）。无需开放云防火墙端口，也无需 QQ 在线即可普通聊天。页面与超级管理员 QQ 共用上下文及权限，命令不进入聊天历史；后台任务通知仍发 QQ。入口拒绝非本机地址、非本机 Host 和跨站请求；通过页面内随机令牌访问 API。只允许 SSH 转发，不提供公网反向代理部署方式。
 

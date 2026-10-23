@@ -1,9 +1,11 @@
 """给慢请求一次等待提示，并在期限内取消未完成请求。"""
 import asyncio
+from .image_generation import image_request
 
 
 async def wait_reply(service, uid, text, self_id, notify, *, prepare=None):
-    deadline = asyncio.get_running_loop().time() + service.config.chat_timeout
+    drawing = image_request(text) if prepare is None and getattr(service, 'image_generator', None) else None
+    deadline = asyncio.get_running_loop().time() + (service.config.image_timeout + 10 if drawing else service.config.chat_timeout)
     signing_in = text.strip() == '签到' and prepare is None
     managing_pool = text.strip().split(maxsplit=1)[:1] == ['/pool'] and prepare is None
     pending = asyncio.create_task(service.handle(uid, text, self_id=self_id, **({'prepare': prepare} if prepare else {})))

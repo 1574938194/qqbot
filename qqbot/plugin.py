@@ -14,6 +14,7 @@ from .media import Media
 from .prompt_upload import PromptUpload
 from .llm import ModelError
 from .web_chat import WebChat
+from .image_generation import ImageGenerator, ImageReply
 import logging
 
 service: Service | None = None
@@ -51,7 +52,7 @@ async def startup():
     profile = Profile(store)
     media = Media(store, llm, config)
     tasks = Tasks(store, llm, config, sender=task_sender) if config.tasks_enabled else None
-    service = Service(store, llm, config, Memory(store, llm, config), tasks)
+    service = Service(store, llm, config, Memory(store, llm, config), tasks, ImageGenerator(config))
     if tasks:
         tasks.start()
 
@@ -112,6 +113,11 @@ async def receive(bot: Bot, event: MessageEvent):
     prepare = (lambda: media.describe(bot, images, text)) if images and media else None
     reply = await wait_reply(service, event.user_id, text, int(bot.self_id), notify, prepare=prepare)
     if reply:
+        if isinstance(reply, ImageReply):
+            for raw in reply.images:
+                if service.store.allowed(event.user_id):
+                    await bot.send_private_msg(user_id=event.user_id, message=Message(MessageSegment.image(raw)))
+            return
         mode = media.voice_mode(event.user_id) if media and isinstance(reply, ChatReply) else 'off'
         if mode != 'on':
             await notify(reply)
