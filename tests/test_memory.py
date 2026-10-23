@@ -72,19 +72,19 @@ async def test_mem0_isolation_reset_outbox_and_restart(setup_memory):
     fail = True
     await s.handle(ADMIN, '服务故障时的消息')
     assert s.store.pending_memory(ADMIN) == 1
-    assert '待同步' in await s.handle(ADMIN, '/memory status')
+    assert '待同步' in await s.handle(ADMIN, '/chat memory status')
     # 重建管理器模拟进程重启，持久化作用域与待办均可恢复。
     await s.memory.close()
     s.memory = Memory(s.store, s.llm, s.config, transport=httpx.MockTransport(handle))
     assert s.memory.scope(ADMIN) == old_scope
     assert s.store.pending_memory(ADMIN) == 1
-    reset = await s.handle(ADMIN, '/reset')
+    reset = await s.handle(ADMIN, '/chat reset')
     assert '外部清理尚有' in reset
     assert not s.store.emotion(ADMIN) and not s.store.history(ADMIN)
     assert s.memory.scope(ADMIN) != old_scope
     assert s.store.memory_jobs(ADMIN, s.memory.identity)[0][2] == 'clear'
     fail = False
-    await s.handle(ADMIN, '/memory sync')
+    await s.handle(ADMIN, '/chat memory sync')
     assert s.store.pending_memory(ADMIN) == 0
     assert calls[-1][0] == 'DELETE' and calls[-1][3] == {'user_id': old_scope}
     assert s.store.history(123)
@@ -146,7 +146,7 @@ async def test_qwenpaw_retrieves_mem0_and_seeds_recent_history_once(setup_memory
     assert model_inputs[-1]['session_id'] == sid
     assert '近期对话' not in model_inputs[-1]['input'][0]['content'][0]['text']
     assert '用户长期喜欢乌龙茶' in model_inputs[-1]['input'][0]['content'][0]['text']
-    assert 'mem0' in await s.handle(ADMIN, '/memory status')
+    assert 'mem0' in await s.handle(ADMIN, '/chat memory status')
     await s.memory.close()
 
 
@@ -175,7 +175,7 @@ async def test_letta_block_create_update_recall_delete(setup_memory):
     assert '用户喜欢猫' in (await s.memory.recall(ADMIN, '我喜欢什么'))[0]
     await s.handle(ADMIN, '我还喜欢读书')
     assert any(method == 'PATCH' for method, _, _ in calls)
-    await s.handle(ADMIN, '/reset')
+    await s.handle(ADMIN, '/chat reset')
     assert not blocks and not s.store.pending_memory(ADMIN)
     await s.memory.close()
 
@@ -205,7 +205,7 @@ async def test_reset_waits_for_external_write(setup_memory):
     chat = asyncio.create_task(s.handle(ADMIN, '我有点焦虑'))
     await started.wait()
     old_scope = s.memory.scope(ADMIN)
-    reset = asyncio.create_task(s.handle(ADMIN, '/reset'))
+    reset = asyncio.create_task(s.handle(ADMIN, '/chat reset'))
     await asyncio.sleep(0)
     assert not reset.done()
     release.set()

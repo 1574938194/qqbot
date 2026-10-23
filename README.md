@@ -84,7 +84,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 
 ## 常用命令
 
-命令合并为英文分组：`/chat` 管对话和记忆，`/voice` 管语音，`/profile` 管资料，`/prompt` 管人设，`/task` 管任务和提醒。`/help` 查看精简目录，`/help chat|voice|task|profile|prompt|admin` 查看分类。旧命令（包括中文别名）继续兼容，不重复展示；“签到”保留原入口。
+命令合并为英文分组：`/chat` 管对话和记忆，`/voice` 管语音，`/profile` 管资料，`/prompt` 管人设，`/task` 管任务和提醒。`/help` 查看精简目录，`/help chat|voice|task|profile|prompt|admin` 查看分类。旧命令及中文别名已移除，收到后返回帮助提示，不触发模型或操作；“签到”保留原入口。
 
 | 命令 | 说明 |
 | --- | --- |
@@ -120,7 +120,7 @@ WebUI Token、OneBot Token、模型密钥相互独立。访问 `http://127.0.0.1
 
 管理员发送 `/prompt upload` 后，5分钟内的下一条非命令私聊文本，或第一个 `.txt` / `.md` 文件，会原样替换统一 system prompt，下轮对话生效。支持多行与原换行，文件上限512KB，并受上下文长度限制；UTF-8、带BOM的UTF-16、GB18030文件可用。失败保留旧人设和剩余等待时间；`/prompt cancel` 取消。其他账号、群文件不会消耗等待；人设提交与确认不会进入聊天历史或调用模型，名字和昵称仍由 `/profile name`、`/profile nickname` 单独设置。
 
-`/profile avatar` 后5分钟内收到的管理员第一张私聊图片用于设置头像；超时/取消后恢复普通识图。`/profile name` 设置正式角色名，`/profile nickname` 同步 QQ 昵称及角色昵称，身份独立保存，不改写原始人设文件。旧 `/name`、`/nickname`、`/setname`、`/setnickname`、`/avatar` 继续兼容，但帮助只列出新入口。
+`/profile avatar` 后5分钟内收到的管理员第一张私聊图片用于设置头像；超时/取消后恢复普通识图。`/profile name` 设置正式角色名，`/profile nickname` 同步 QQ 昵称及角色昵称，身份独立保存，不改写原始人设文件。仅支持 `/profile` 下的资料命令。
 
 未知 `/命令` 不进入模型；输入语音转文字尚未实现。
 

@@ -4,7 +4,6 @@ from pathlib import Path
 
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from .commands import normalize
 from .config import ADMIN
 from .image_generation import ImageReply
 from .reply_wait import wait_reply
@@ -48,7 +47,7 @@ class GroupChat:
             return
         identity = self.private.store.identity()
         self.service.store.set_identity(name=identity.get('role_name', 'AI 助手'), nickname=identity.get('role_nickname', ''))
-        text = normalize(event.get_plaintext()).strip()
+        text = event.get_plaintext().strip()
         images = [s for s in event.message if s.type == 'image']
 
         async def send(text):
@@ -57,10 +56,10 @@ class GroupChat:
 
         if text.startswith('/'):
             command = text.split(maxsplit=1)[0].lower()
-            if command in ('/help', '/帮助'):
+            if command == '/help':
                 await send(GROUP_HELP)
                 return
-            if text not in ('/status', '/状态', '/compress', '/压缩', '/reset', '/清空'):
+            if text not in ('/chat', '/chat status', '/chat compress', '/chat reset'):
                 await send(GROUP_HELP)
                 return
         prepare = (lambda: self.media.describe(bot, images, text)) if images and self.media else None

@@ -19,7 +19,7 @@ def test_explicit_drawing_intent(text):
     assert image_request(text)
 
 
-@pytest.mark.parametrize('text', ['不要生成图片', '为什么不能生成图片？', '图片里是什么', '/tool 生成图片', '我今天画了一张画', '这个故事里的画一张图片是台词'])
+@pytest.mark.parametrize('text', ['不要生成图片', '为什么不能生成图片？', '图片里是什么', '/task run 生成图片', '我今天画了一张画', '这个故事里的画一张图片是台词'])
 def test_normal_discussion_not_drawing(text):
     assert image_request(text) is None
 

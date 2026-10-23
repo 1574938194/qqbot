@@ -4,7 +4,7 @@ import logging
 import time
 from collections import defaultdict
 
-from .commands import normalize
+from .commands import parse, PROFILE_HELP
 from .config import ADMIN
 
 
@@ -29,18 +29,21 @@ class Profile:
             return None
         images = [segment for segment in event.message if segment.type == 'image']
         pure_text = all(segment.type == 'text' for segment in event.message)
-        text = normalize(event.get_plaintext()).strip() if pure_text else ''
-        parts = text.split(maxsplit=1)
-        command = parts[0].lower() if parts else ''
-        if command == '/profile':
-            return '只有超级管理员可以修改机器人资料。' if event.user_id != ADMIN else '用法：/profile name 名字；/profile nickname 昵称；/profile avatar [cancel]'
-        if command not in ('/setname', '/setnickname', '/name', '/nickname', '/avatar') and not images:
+        text = event.get_plaintext().strip() if pure_text else ''
+        root, body = parse(text)
+        command, args = parse(body) if root == '/profile' else ('', '')
+        if root != '/profile' and not images:
             return None
         if event.user_id != ADMIN:
-            return '只有超级管理员可以修改机器人资料。' if command else None
+            return '只有超级管理员可以修改机器人资料。' if root == '/profile' else None
         async with self.locks[str(bot.self_id)]:
-            if command == '/avatar':
-                args = parts[1].strip() if len(parts) == 2 else ''
+            if root == '/profile' and not body:
+                identity = self.store.identity()
+                return ('当前角色名字：' + identity.get('role_name', '未单独设置')
+                        + '\n当前昵称：' + identity.get('role_nickname', '未单独设置'))
+            if root == '/profile' and command not in ('name', 'nickname', 'avatar'):
+                return PROFILE_HELP
+            if command == 'avatar':
                 if args == 'cancel':
                     self.clear(bot.self_id)
                     return '已取消等待头像图片。'
@@ -50,15 +53,15 @@ class Profile:
                     self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)',
                         ('avatar_pending:' + str(bot.self_id), str(self.clock() + 300)))
                 return '请在5分钟内私聊发送图片，收到的第一张图片将设为机器人头像。取消请用 /profile avatar cancel。'
-            if command in ('/setname', '/setnickname', '/name', '/nickname'):
-                if len(parts) == 1:
+            if command in ('name', 'nickname'):
+                if not args:
                     identity = self.store.identity()
                     return ('当前角色名字：' + identity.get('role_name', '未单独设置')
                             + '\n当前昵称：' + identity.get('role_nickname', '未单独设置'))
-                name = parts[1].strip() if len(parts) == 2 else ''
+                name = args.strip()
                 if not name or len(name) > 32 or any(ord(char) < 32 for char in name):
-                    return f'用法：{command} 新名字（1至32个字符，不含换行）'
-                if command == '/setname':
+                    return f'用法：/profile {command} 新名字（1至32个字符，不含换行）'
+                if command == 'name':
                     self.store.set_identity(name=name)
                     return f'角色名字已更新为「{name}」，已保存，下轮对话生效。'
                 try:

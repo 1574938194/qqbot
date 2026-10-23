@@ -67,7 +67,7 @@ async def test_persistence_isolation_prompt_reset(tmp_path):
     assert store.summary(123) == '旧摘要'
     assert len(store.history(123)) == 1
     assert store.prompt() == '新人设\n第二行'
-    await s.handle(123, '/清空')
+    await s.handle(123, '/chat reset')
     assert not store.history(123) and not store.summary(123)
     assert len(store.history(ADMIN)) == 1
     assert store.prompt() == '新人设\n第二行'
@@ -84,19 +84,19 @@ def populate(s, count):
 async def test_manual_repeated_compression_and_failure(service):
     s = service
     populate(s, 10)
-    assert '压缩完成' in await s.handle(ADMIN, '/压缩')
+    assert '压缩完成' in await s.handle(ADMIN, '/chat compress')
     assert len(s.store.history(ADMIN)) == 6
     assert s.store.summary(ADMIN)
     populate(s, 4)
     before = s.store.history(ADMIN), s.store.summary(ADMIN)
     s.llm.fail = True
-    assert '原对话和摘要已保留' in await s.handle(ADMIN, '/compress')
+    assert '原对话和摘要已保留' in await s.handle(ADMIN, '/chat compress')
     assert before == (s.store.history(ADMIN), s.store.summary(ADMIN))
     s.llm.fail = False
-    await s.handle(ADMIN, '/compress')
+    await s.handle(ADMIN, '/chat compress')
     assert '已有摘要' in str(s.llm.calls[-1])
     assert len(s.store.history(ADMIN)) == 6
-    assert '暂无可压缩' in await s.handle(ADMIN, '/compress')
+    assert '暂无可压缩' in await s.handle(ADMIN, '/chat compress')
 
 
 async def test_auto_limits_and_errors(service):
@@ -166,7 +166,7 @@ async def test_chat_reset_serialization(service):
     s.llm.complete = waiting
     chat = asyncio.create_task(s.handle(ADMIN, '慢请求'))
     await started.wait()
-    reset = asyncio.create_task(s.handle(ADMIN, '/reset'))
+    reset = asyncio.create_task(s.handle(ADMIN, '/chat reset'))
     await asyncio.sleep(0)
     assert not reset.done()
     release.set()
@@ -201,9 +201,9 @@ async def test_compress_reset_serialization(service):
         await release.wait()
         return '摘要'
     s.llm.complete = waiting
-    compress = asyncio.create_task(s.handle(ADMIN, '/compress'))
+    compress = asyncio.create_task(s.handle(ADMIN, '/chat compress'))
     await started.wait()
-    reset = asyncio.create_task(s.handle(ADMIN, '/reset'))
+    reset = asyncio.create_task(s.handle(ADMIN, '/chat reset'))
     await asyncio.sleep(0)
     assert not reset.done()
     release.set()

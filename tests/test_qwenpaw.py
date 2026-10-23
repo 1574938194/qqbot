@@ -61,7 +61,7 @@ def setup(tmp_path):
     store = Store(str(tmp_path / 'test.db'))
     config = Settings(agent_backend='qwenpaw', qwenpaw_token='test-token', qwenpaw_files=str(tmp_path))
     llm = SimpleNamespace(complete=AsyncMock())
-    tasks = SimpleNamespace(tools=SimpleNamespace(shell_enabled=lambda: True), chat=AsyncMock(return_value='任务已完成'))
+    tasks = SimpleNamespace(tools=SimpleNamespace(shell_enabled=lambda: True), command=AsyncMock(return_value='任务已完成'))
     service = Service(store, llm, config, tasks=tasks)
     app = FastAPI()
     calls = []
@@ -119,9 +119,9 @@ async def test_natural_tasks_use_qwenpaw_and_preserve_prompt_and_isolation(setup
 
 async def test_commands_and_failed_response_not_saved(setup):
     service, calls, state = setup
-    assert await service.handle(ADMIN, '/tool 帮我写文件') == '任务已完成'
+    assert await service.handle(ADMIN, '/task run 帮我写文件') == '任务已完成'
     assert not service.store.history(ADMIN)
-    assert service.tasks.chat.called and not calls
+    assert service.tasks.command.called and not calls
     count = len(calls)
     assert '未知命令' in await service.handle(ADMIN, '/unknown')
     assert len(calls) == count
@@ -135,7 +135,7 @@ async def test_reset_waits_for_chat_then_clears_both_histories(setup):
     state['entered'], state['release'] = asyncio.Event(), asyncio.Event()
     chat = asyncio.create_task(service.handle(ADMIN, '写一个文件'))
     await state['entered'].wait()
-    reset = asyncio.create_task(service.handle(ADMIN, '/reset'))
+    reset = asyncio.create_task(service.handle(ADMIN, '/chat reset'))
     await asyncio.sleep(.01)
     assert not reset.done()
     state['release'].set()
@@ -151,7 +151,7 @@ async def test_stop_interrupts_without_waiting_for_user_lock(setup):
     state['entered'], state['release'] = asyncio.Event(), asyncio.Event()
     task = asyncio.create_task(service.handle(ADMIN, '执行长任务'))
     await state['entered'].wait()
-    assert '已停止' in await asyncio.wait_for(service.handle(ADMIN, '/stop'), 1)
+    assert '已停止' in await asyncio.wait_for(service.handle(ADMIN, '/task stop'), 1)
     assert '未正常完成' in await task
     assert not service.store.history(ADMIN)
     assert calls[-1][0] == 'stop'

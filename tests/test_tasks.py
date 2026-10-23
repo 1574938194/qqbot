@@ -32,9 +32,9 @@ async def test_dsh_admin_optin_background_and_history_isolation(manager):
     await s.handle(ADMIN, '/task shell on')
     t.store.grant(123, True)
     assert '超级管理员' in await s.handle(123, '/task shell off')
-    assert '仅供管理员' in await s.handle(123, '/tool 写文件测试')
-    reply = await s.handle(ADMIN, '/tool 写文件测试', self_id=99999)
-    assert 'DSH 任务' in reply
+    assert '仅供管理员' in await s.handle(123, '/task run 写文件测试')
+    reply = await s.handle(ADMIN, '/task run 写文件测试', self_id=99999)
+    assert '已创建任务' in reply
     task = t.repo.list(ADMIN)[0]
     assert task['instruction'] == '写文件测试'
     await finish_tick(t)

@@ -27,18 +27,18 @@ async def test_speaker_permissions_isolation_and_restart(tmp_path):
     store.db.commit()
     media = Media(store, None, Settings(tts_backend='genie'))
     try:
-        assert await media.command(456, '/speaker noto') is None
+        assert await media.command(456, '/voice speaker noto') is None
         assert media.voice_mode(ADMIN) == 'off'
-        assert '早见沙织' in await media.command(ADMIN, '/speaker list')
-        assert '能登麻美子' in await media.command(ADMIN, '/speaker noto')
-        assert '早见沙织' in await media.command(123, '/speaker 早见沙织')
+        assert '早见沙织' in await media.command(ADMIN, '/voice speaker list')
+        assert '能登麻美子' in await media.command(ADMIN, '/voice speaker noto')
+        assert '早见沙织' in await media.command(123, '/voice speaker 早见沙织')
         assert media.speaker(ADMIN) == 'noto' and media.speaker(123) == 'hayami'
-        assert '不存在' in await media.command(ADMIN, '/speaker ../../secret')
+        assert '不存在' in await media.command(ADMIN, '/voice speaker ../../secret')
         assert media.speaker(ADMIN) == 'noto'
         store.close()
         media.store = store = Store(path)
         assert media.speaker(ADMIN) == 'noto' and media.speaker(123) == 'hayami'
-        assert '悠木碧' in await media.command(ADMIN, '/speaker reset')
+        assert '悠木碧' in await media.command(ADMIN, '/voice speaker reset')
         assert media.speaker(ADMIN) == 'aoi' and media.voice_mode(ADMIN) == 'off'
     finally:
         await media.close()
@@ -59,11 +59,11 @@ async def test_selected_speaker_payload_and_explicit_edge(tmp_path):
         return b'edge-audio'
     media.edge_audio = edge
     try:
-        await media.command(ADMIN, '/speaker hayami')
-        assert await media.command(ADMIN, '/say 你好') == wav()
+        await media.command(ADMIN, '/voice speaker hayami')
+        assert await media.command(ADMIN, '/voice say 你好') == wav()
         assert calls == [{'text': '你好', 'speaker': 'hayami'}]
-        await media.command(ADMIN, '/speaker edge')
-        assert await media.command(ADMIN, '/say 原来的声音') == b'edge-audio'
+        await media.command(ADMIN, '/voice speaker edge')
+        assert await media.command(ADMIN, '/voice say 原来的声音') == b'edge-audio'
         assert len(calls) == 1
     finally:
         await media.close()
@@ -79,9 +79,9 @@ async def test_failed_clone_keeps_selection_and_does_not_fallback(tmp_path):
         raise AssertionError('must not change voice on failure')
     media.edge_audio = media.sapi_audio = forbidden
     try:
-        await media.command(ADMIN, '/speaker noto')
+        await media.command(ADMIN, '/voice speaker noto')
         with pytest.raises(ModelError, match='语音生成失败'):
-            await media.command(ADMIN, '/say 你好')
+            await media.command(ADMIN, '/voice say 你好')
         assert media.speaker(ADMIN) == 'noto'
     finally:
         await media.close()
@@ -97,11 +97,11 @@ async def test_queued_request_keeps_its_selected_voice(tmp_path):
         return wav()
     media.sovits_audio = synthesize
     try:
-        await media.command(ADMIN, '/speaker noto')
+        await media.command(ADMIN, '/voice speaker noto')
         await media.tts_gate.acquire()
         task = asyncio.create_task(media.synthesize('你好', uid=ADMIN))
         await asyncio.sleep(0)
-        await media.command(ADMIN, '/speaker hayami')
+        await media.command(ADMIN, '/voice speaker hayami')
         media.tts_gate.release()
         await task
         assert calls == ['noto']

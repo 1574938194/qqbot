@@ -11,7 +11,7 @@ from .task_store import TaskStore
 from .task_files import ToolError, TaskFiles
 from .dsh_agent import DshAgent
 
-from .commands import TASK_HELP
+from .commands import TASK_HELP, parse
 
 
 class Tasks:
@@ -76,16 +76,21 @@ class Tasks:
 
     async def command(self, uid, command, args, *, bot_id=''):
         try:
-            if command == '/tools':
-                if args.startswith('shell '):
-                    action = args.split()
-                    if len(action) != 2 or action[1] not in ('on', 'off'):
-                        return '格式：/task shell on 或 /task shell off'
-                    self.tools.set_shell(uid, action[1] == 'on')
-                    return '本机命令执行已' + ('启用（仅超级管理员任务）。' if action[1] == 'on' else '关闭。')
+            if command != '/task':
+                return '未知命令，请使用 /help 查看可用命令。'
+            action, rest = parse(args)
+            if action == 'shell':
+                if rest not in ('on', 'off'):
+                    return '格式：/task shell on 或 /task shell off'
+                self.tools.set_shell(uid, rest == 'on')
+                return '本机命令执行已' + ('启用（仅超级管理员任务）。' if rest == 'on' else '关闭。')
+            if action == 'tools':
                 return 'Agent 后端：DeepSeek Harness（DSH）\n能力由 DSH 配置与插件管理。\nDSH 执行：' + ('已启用' if self.tools.shell_enabled() else '未启用') + '\n用法见 /help task。'
-            parts = args.split(maxsplit=1)
-            action, rest = (parts + [''])[:2] if parts else ('', '')
+            reminder = action == 'remind'
+            if reminder:
+                action, rest = parse(rest)
+                if action not in ('in', 'at', 'every', 'daily'):
+                    return TASK_HELP
             if action == 'list':
                 if rest.strip() not in ('', 'all'):
                     return '格式：/task list 或 /task list all。'
@@ -115,13 +120,13 @@ class Tasks:
                 return '补充信息已保存，任务将继续执行。'
             if action in ('cancel', 'pause', 'resume', 'retry'):
                 return self.control(uid, rest.strip(), action)
-            if action == 'run' and command != '/remind':
+            if action == 'run':
                 task = self.create(uid, rest, bot_id=bot_id)
             elif action in ('in', 'at', 'every', 'daily'):
                 when_text = rest.split(maxsplit=1)
                 if len(when_text) != 2:
                     return TASK_HELP
-                task = self.create(uid, when_text[1], kind='reminder' if command == '/remind' else 'agent',
+                task = self.create(uid, when_text[1], kind='reminder' if reminder else 'agent',
                                    mode=action, when=when_text[0], bot_id=bot_id)
             else:
                 return TASK_HELP
@@ -130,14 +135,6 @@ class Tasks:
             return str(exc)
         except OSError:
             return '任务文件读取失败，请检查文件是否存在。'
-
-    async def chat(self, uid, messages, *, bot_id=''):
-        instruction = next((m['content'] for m in reversed(messages) if m['role'] == 'user'), '')
-        try:
-            task = self.create(uid, instruction, bot_id=bot_id)
-            return '已创建 DSH 任务：\n' + self.brief(task) + '\n结果会在后台完成后投递到 QQ，可用 /task show 查询。'
-        except ValueError as exc:
-            return str(exc)
 
     def initial_messages(self, task):
         # 不把陪伴人设和私人聊天传给代码/浏览器 agent。

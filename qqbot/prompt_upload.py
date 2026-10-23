@@ -10,7 +10,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
-from .commands import normalize
+from .commands import parse
 from .config import ADMIN
 
 MAX_BYTES = 512 * 1024
@@ -84,17 +84,17 @@ class PromptUpload:
             return None
         pure_text = all(segment.type == 'text' for segment in event.message)
         raw_text = event.get_plaintext() if pure_text else None
-        parts = normalize(raw_text).strip().split(maxsplit=1) if raw_text is not None else []
-        command = parts[0].lower() if parts else ''
-        if command == '/setprompt':
+        command, args = parse(raw_text) if raw_text is not None else ('', '')
+        action, extra = parse(args)
+        if command == '/prompt' and action in ('upload', 'cancel'):
             if event.user_id != ADMIN:
                 return '只有超级管理员可以修改统一人设。'
             async with self.lock:
-                if len(parts) == 2 and parts[1].strip() == 'cancel':
+                if extra:
+                    return '用法：/prompt upload 或 /prompt cancel'
+                if action == 'cancel':
                     self.clear(bot.self_id)
                     return '已取消等待人设内容。'
-                if len(parts) > 1:
-                    return '用法：/prompt upload 或 /prompt cancel'
                 with self.store.db:
                     self.store.db.execute('INSERT OR REPLACE INTO settings VALUES (?,?)', (self.key(bot.self_id), str(self.clock() + 300)))
                 return '请在5分钟内发送下一条非命令文本，或上传txt/md文件，将其原文设为统一system prompt。取消请用 /prompt cancel。'

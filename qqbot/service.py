@@ -9,7 +9,7 @@ from .emotion import advance, decay, describe, hint
 from .checkin import checkin, pool
 from .identity import clean_identity_echo
 from .image_generation import image_request
-from .commands import normalize, help_text, CHAT_HELP, PROMPT_HELP
+from .commands import parse, help_text, CHAT_HELP, PROMPT_HELP
 
 
 def estimate(text):
@@ -79,8 +79,7 @@ class Service:
     async def handle(self, uid, text, *, private=True, self_id=None, prepare=None):
         if not private or uid == self_id or not self.store.allowed(uid):
             return None
-        text = normalize(text)
-        if self.qwen and text.strip() in ('/stop', '停止当前任务', '取消当前任务', '先停一下'):
+        if self.qwen and (parse(text) == ('/task', 'stop') or text.strip() in ('停止当前任务', '取消当前任务', '先停一下')):
             return await self.qwen.stop(uid)
         async with self.locks[uid]:
             if not self.store.allowed(uid):
@@ -161,35 +160,24 @@ class Service:
         return reply
 
     async def command(self, uid, text, *, bot_id=''):
-        text = normalize(text)
-        parts = text.split(maxsplit=1)
-        cmd, args = parts[0].lower(), parts[1] if len(parts) == 2 else ""
-        if cmd == '/tool':
-            if not self.tasks:
-                return '任务模块未启用。'
-            if not args.strip():
-                return '用法：/task run 要执行的任务。' + ('明确任务也可以直接用自然语言提出。' if self.qwen else '普通聊天不会调用工具。')
-            if estimate(args) > self.config.max_input_tokens:
-                return '任务内容太长，请缩短后重试。'
-            nested = args.split(maxsplit=1)
-            if nested[0].lower() in ('/task', '/任务'):
-                return await self.tasks.command(uid, '/task', nested[1] if len(nested) > 1 else '', bot_id=bot_id)
-            # 显式命令走独立任务记录，不写入 QwenPaw 的陪伴会话或记忆。
-            return await self.tasks.chat(uid, self.messages(uid, args), bot_id=bot_id)
+        cmd, args = parse(text)
+        if cmd == '/chat':
+            action, rest = parse(args)
+            action = action or 'status'
+            if action not in ('status', 'compress', 'reset', 'emotion', 'memory') or (action != 'memory' and rest):
+                return CHAT_HELP
+            cmd, args = 'chat.' + action, rest
         if cmd == '/pool':
             if uid != ADMIN:
                 return '只有超级管理员可以使用此命令。'
             return await pool(self.config, args)
-        if cmd in ('/task', '/任务', '/remind', '/提醒', '/tools', '/工具'):
+        if cmd == '/task':
             if not self.tasks:
                 return '任务模块未启用。'
-            name = {'/任务': '/task', '/提醒': '/remind', '/工具': '/tools'}.get(cmd, cmd)
-            return await self.tasks.command(uid, name, args, bot_id=bot_id)
-        if cmd in ("/help", "/帮助"):
+            return await self.tasks.command(uid, '/task', args, bot_id=bot_id)
+        if cmd == "/help":
             return help_text(admin=uid == ADMIN, tasks=bool(self.tasks), agent=bool(self.qwen), section=args.strip())
-        if cmd == "/chat":
-            return CHAT_HELP
-        if cmd in ("/status", "/状态"):
+        if cmd == "chat.status":
             identity = self.store.identity()
             return (("执行后端：QwenPaw + DeepSeek Harness（DSH）\n下列上下文数值为 QQ 本地镜像估算，运行时另行压缩。\n" if self.qwen else '') + f"模型：{self.config.model}\n"
                     f"角色名：{identity.get('role_name', '未单独设置')}；昵称：{identity.get('role_nickname', '未单独设置')}\n"
@@ -199,9 +187,9 @@ class Service:
                     f"自动压缩：超过 {self.config.compress_tokens} tokens，保留最近 {self.config.keep_rounds} 轮\n"
                     + (self.memory.status(uid) if self.memory and self.memory.enabled else "长期记忆：QwenPaw（独立工作区）" if self.qwen else "长期记忆：none") + "\n"
                     + (describe(decay(self.store.emotion(uid))) if self.config.emotion_enabled else "情感状态：关闭"))
-        if cmd in ("/emotion", "/情绪"):
+        if cmd == "chat.emotion":
             return describe(decay(self.store.emotion(uid))) if self.config.emotion_enabled else "情感状态模块已关闭。"
-        if cmd == "/memory":
+        if cmd == "chat.memory":
             if self.qwen and not (self.memory and self.memory.enabled) and args in ('status', 'sync', 'clear'):
                 return {'status': '长期记忆：QwenPaw；按用户隔离，自动检索与持久化。',
                         'sync': 'QwenPaw 自动保存会话与记忆，无需手动同步。',
@@ -219,7 +207,7 @@ class Service:
                     await self.memory.flush(uid, limit=20)
                 return "长期记忆已与当前聊天隔离，正在/已请求外部清理；本地聊天及摘要保留。\n" + (self.memory.status(uid) if self.memory else f"待外部清理：{self.store.pending_memory(uid)} 项")
             return "请使用 /chat memory status|sync|clear。"
-        if cmd in ("/reset", "/清空"):
+        if cmd == "chat.reset":
             if self.qwen:
                 await self.qwen.reset(uid)
             self.store.reset(uid)
@@ -228,7 +216,7 @@ class Service:
             pending = self.store.pending_memory(uid)
             return ("你的聊天历史、摘要和情感状态已清空，旧长期记忆已隔离，统一人设保留。"
                     + (f"\n外部清理尚有 {pending} 项待办，请恢复原记忆后端配置后用 /chat memory sync 重试。" if pending else ""))
-        if cmd in ("/compress", "/压缩"):
+        if cmd == "chat.compress":
             try:
                 if self.qwen:
                     await self.qwen.chat(uid, '/compact')

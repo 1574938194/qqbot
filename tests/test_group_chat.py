@@ -62,12 +62,12 @@ async def test_only_admin_direct_mention_in_target_group_triggers(setup):
 
 async def test_group_commands_cannot_expose_private_prompt_or_tools(setup):
     group, bot, private = setup
-    for text in ('/prompt show', '/setprompt', '/tool 执行命令', '/whitelist list', '/say 你好'):
+    for text in ('/prompt show', '/prompt upload', '/task run 执行命令', '/whitelist list', '/voice say 你好'):
         await group.handle(bot,event(text))
     assert not private.llm.complete.called
     assert all('PRIVATE' not in str(c) for c in bot.send_group_msg.call_args_list)
     await group.handle(bot,event('记住本群的话题'))
-    await group.handle(bot,event('/reset'))
+    await group.handle(bot,event('/chat reset'))
     assert not group.service.store.history(ADMIN)
     assert private.store.history(ADMIN)
 

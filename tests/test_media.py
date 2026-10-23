@@ -98,17 +98,17 @@ async def test_voice_preferences_commands_and_fallback(tmp_path):
     media.edge_audio, media.sapi_audio = fail_edge, sapi
     try:
         assert media.voice_mode(ADMIN) == 'off'
-        assert await media.command(123, '/say no') is None
+        assert await media.command(123, '/voice say no') is None
         assert '开启' in await media.command(ADMIN, '/voice on')
         store.close()
         store = Store(path)
         media.store = store
         assert media.voice_mode(ADMIN) == 'on'
-        assert (await media.command(ADMIN, '/say 你好')).startswith(b'RIFF')
+        assert (await media.command(ADMIN, '/voice say 你好')).startswith(b'RIFF')
         assert calls == ['edge', '你好']
         assert '文字' in await media.command(ADMIN, '/voice off')
         with pytest.raises(ModelError, match='最多'):
-            await media.command(ADMIN, '/say ' + '长' * 501)
+            await media.command(ADMIN, '/voice say ' + '长' * 501)
     finally:
         await media.close()
         store.close()
@@ -139,7 +139,7 @@ async def test_image_prepare_serialized_and_not_external_memory(tmp_path):
         assert not started.is_set()
         request = asyncio.create_task(service.handle(ADMIN, '看看图片', prepare=prepare))
         await started.wait()
-        reset = asyncio.create_task(service.handle(ADMIN, '/reset'))
+        reset = asyncio.create_task(service.handle(ADMIN, '/chat reset'))
         await asyncio.sleep(.01)
         assert not reset.done()
         proceed.set()

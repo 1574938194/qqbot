@@ -50,7 +50,7 @@ async def test_local_page_token_and_cross_site_protection(setup):
         headers = {'X-Debug-Token': web.token}
         assert (await client.get('/debug/state', headers=headers)).status_code == 200
         for extra in ({'Origin': 'https://evil.test'}, {'Sec-Fetch-Site': 'cross-site'}, {'Host': 'evil.test'}):
-            response = await client.post('/debug/chat', headers={**headers, **extra}, json={'text': '/reset'})
+            response = await client.post('/debug/chat', headers={**headers, **extra}, json={'text': '/chat reset'})
             assert response.status_code == 403
         assert not service.llm.complete.called
     async with client_for(app, host='8.8.8.8') as client:
@@ -73,14 +73,14 @@ async def test_shared_context_offline_chat_and_commands(setup):
         assert 'QQ 之前的话' in str(messages) and '其他用户私密' not in str(messages)
         assert '结构化JSON协议' not in str(messages)
         assert len(service.store.history(ADMIN)) == 2
-        for command in ('/help', '/status', '/missing', '/setname 调试名字', '/avatar', '/speaker list'):
+        for command in ('/help', '/chat status', '/missing', '/profile name 调试名字', '/profile avatar', '/voice speaker list'):
             assert (await client.post('/debug/chat', json={'text': command})).status_code == 200
         assert len(service.store.history(ADMIN)) == 2
         assert service.llm.complete.call_count == 1
         assert service.store.identity()['role_name'] == '调试名字'
         assert not service.store.db.execute("SELECT 1 FROM settings WHERE key LIKE 'avatar_pending:%'").fetchone()
         service.store.compress(ADMIN, service.store.history(ADMIN)[0][0], '摘要')
-        await client.post('/debug/chat', json={'text': '/reset'})
+        await client.post('/debug/chat', json={'text': '/chat reset'})
         assert not service.store.history(ADMIN) and not service.store.summary(ADMIN)
         assert service.store.history(123)
 
@@ -89,14 +89,14 @@ async def test_prompt_capture_and_audio_no_chat_history(setup):
     app, web, service, upload, media, bots = setup
     async with client_for(app) as client:
         client.headers['X-Debug-Token'] = web.token
-        await client.post('/debug/chat', json={'text': '/setprompt'})
+        await client.post('/debug/chat', json={'text': '/prompt upload'})
         assert (await client.get('/debug/state')).json()['prompt_pending']
         assert upload.deadline('1946794276') is None
         raw = '  测试人设\r\n保留原文  '
         await client.post('/debug/chat', json={'text': raw})
         assert service.store.prompt() == raw
         assert not upload.deadline(WEB_BOT_ID)
-        response = (await client.post('/debug/chat', json={'text': '/say 你好'})).json()
+        response = (await client.post('/debug/chat', json={'text': '/voice say 你好'})).json()
         assert base64.b64decode(response['audio'][0]) == b'RIFF-test-wave'
         assert not service.llm.complete.called and not service.store.history(ADMIN)
 
@@ -105,15 +105,15 @@ async def test_live_nickname_and_task_transport_id(setup):
     app, web, service, _, _, bots = setup
     bot = SimpleNamespace(self_id='1946794276', call_api=AsyncMock())
     bots[bot.self_id] = bot
-    service.tasks = SimpleNamespace(chat=AsyncMock(return_value='任务完成'))
+    service.tasks = SimpleNamespace(command=AsyncMock(return_value='任务完成'))
     async with client_for(app) as client:
         client.headers['X-Debug-Token'] = web.token
-        await client.post('/debug/chat', json={'text': '/setnickname 新昵称'})
+        await client.post('/debug/chat', json={'text': '/profile nickname 新昵称'})
         bot.call_api.assert_awaited_once_with('set_qq_profile', nickname='新昵称')
         assert service.store.identity()['role_nickname'] == '新昵称'
-        result = (await client.post('/debug/chat', json={'text': '/tool 调试任务'})).json()
+        result = (await client.post('/debug/chat', json={'text': '/task run 调试任务'})).json()
         assert result['reply'] == '任务完成'
-        assert service.tasks.chat.call_args.kwargs['bot_id'] == bot.self_id
+        assert service.tasks.command.call_args.kwargs['bot_id'] == bot.self_id
         assert not service.store.history(ADMIN)
 
 
@@ -132,7 +132,7 @@ async def test_web_busy_and_qq_reset_share_service_lock(setup):
         pending = asyncio.create_task(client.post('/debug/chat', json={'text': '慢消息'}))
         await entered.wait()
         assert (await client.post('/debug/chat', json={'text': '重复提交'})).status_code == 409
-        reset = asyncio.create_task(service.handle(ADMIN, '/reset', self_id=1946794276))
+        reset = asyncio.create_task(service.handle(ADMIN, '/chat reset', self_id=1946794276))
         await asyncio.sleep(.01)
         assert not reset.done()
         release.set()
@@ -165,7 +165,7 @@ async def test_prompt_file_exact_bytes_decoding_no_model_or_history(setup, encod
     content = '  新人设\r\n第二行\r\n  '
     async with client_for(app) as client:
         client.headers['X-Debug-Token'] = web.token
-        await client.post('/debug/chat', json={'text': '/setprompt'})
+        await client.post('/debug/chat', json={'text': '/prompt upload'})
         result = await client.post('/debug/chat', json={'files': [attachment('角色.MD', content.encode(encoding))]})
         assert result.status_code == 200 and '已更新' in result.json()['reply']
         assert not result.json()['prompt_pending']
@@ -187,7 +187,7 @@ async def test_images_without_qq_use_vision_and_keep_prompt_waiting(setup):
     try:
         async with client_for(app) as client:
             client.headers['X-Debug-Token'] = web.token
-            await client.post('/debug/chat', json={'text': '/setprompt'})
+            await client.post('/debug/chat', json={'text': '/prompt upload'})
             result = await client.post('/debug/chat', json={'text': '是什么颜色？',
                 'files': [attachment('a.png', png.getvalue()), attachment('b.png', png.getvalue())]})
             assert result.status_code == 200 and result.json()['prompt_pending']
@@ -208,7 +208,7 @@ async def test_text_attachment_chat_and_expired_prompt_does_not_replace(setup):
     service.store.set_prompt('原人设')
     async with client_for(app) as client:
         client.headers['X-Debug-Token'] = web.token
-        await client.post('/debug/chat', json={'text': '/setprompt'})
+        await client.post('/debug/chat', json={'text': '/prompt upload'})
         upload.clock = lambda: 1e12
         result = await client.post('/debug/chat', json={'text': '总结这个文件',
             'files': [attachment('笔记.txt', '周末去公园'.encode())]})
@@ -223,14 +223,14 @@ async def test_invalid_files_preserve_prompt_and_waiting(setup):
     service.store.set_prompt('原人设')
     async with client_for(app) as client:
         client.headers['X-Debug-Token'] = web.token
-        await client.post('/debug/chat', json={'text': '/setprompt'})
+        await client.post('/debug/chat', json={'text': '/prompt upload'})
         for files in ([attachment('x.exe', b'bad')], [attachment('x.md', b'x' * (MAX_BYTES + 1))],
                       [{'name': 'x.md', 'data': 'invalid base64!'}], [attachment('x.md', b'a')] * 2):
             assert (await client.post('/debug/chat', json={'files': files})).status_code == 400
         for content in (b'\0binary', b'   '):
             reply = (await client.post('/debug/chat', json={'files': [attachment('x.md', content)]})).json()
             assert reply['prompt_pending']
-        assert (await client.post('/debug/chat', json={'text': '/setprompt', 'files': [attachment('x.md', b'a')]})).status_code == 400
+        assert (await client.post('/debug/chat', json={'text': '/prompt upload', 'files': [attachment('x.md', b'a')]})).status_code == 400
         assert service.store.prompt() == '原人设' and not service.store.history(ADMIN)
         assert not service.llm.complete.called
 

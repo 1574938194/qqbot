@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from nonebot.adapters.onebot.v11 import Message, MessageSegment
 
-from .commands import normalize
+from .commands import parse
 from .config import ADMIN
 from .llm import ModelError
 from .prompt_upload import MAX_BYTES, decode_text
@@ -106,8 +106,8 @@ class WebChat:
             raise HTTPException(400, '请输入有效文本或上传正常图片、txt/md文件，文件需符合大小限制。') from None
         if files and text.lstrip().startswith('/'):
             raise HTTPException(400, '命令请单独发送；设置人设请先发送 /prompt upload，再单独上传 txt/md 文件。')
-        if normalize(text).strip() == '/stop' and service.qwen:
-            return JSONResponse({'reply': await service.handle(ADMIN, '/stop'), 'audio': [], 'images': [], 'files': []}, headers=self.headers())
+        if parse(text) == ('/task', 'stop') and service.qwen:
+            return JSONResponse({'reply': await service.handle(ADMIN, '/task stop'), 'audio': [], 'images': [], 'files': []}, headers=self.headers())
         if self.lock.locked():
             raise HTTPException(409, '网页上一条请求仍在处理中，请等待。')
         async with self.lock:
@@ -153,7 +153,6 @@ class WebChat:
         return result
 
     async def dispatch(self, service, text, files=()):
-        text = normalize(text) if not files else text
         _, profile, media, upload = self.runtime()
         bots = self.bots()
         live_bot = next(iter(bots.values())) if len(bots) == 1 else None
@@ -190,12 +189,12 @@ class WebChat:
 
             prepare = prepare_images
         command = (text.strip().split(maxsplit=1) or [''])[0].lower()
-        if reply is None and command == '/avatar':
-            reply = '网页暂不支持设置 QQ 头像；请在 QQ 使用 /avatar 并发送图片。'
+        if reply is None and parse(text)[0] == '/profile' and parse(parse(text)[1])[0] == 'avatar':
+            reply = '网页暂不支持设置 QQ 头像；请在 QQ 使用 /profile avatar 并发送图片。'
         if reply is None and profile and not files:
             reply = await profile.handle(bot, event)
         audio = []
-        if reply is None and media and command in ('/say', '/voice', '/speaker'):
+        if reply is None and media and command == '/voice':
             result = await media.command(ADMIN, text)
             if isinstance(result, bytes):
                 audio.append(base64.b64encode(result).decode('ascii'))

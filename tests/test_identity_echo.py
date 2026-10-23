@@ -46,5 +46,5 @@ async def test_internal_echo_only_is_not_a_successful_turn(tmp_path):
 
 
 def test_normal_field_discussion_is_preserved():
-    text = 'role_name 是数据库字段，你可以通过 /setname 修改。'
+    text = 'role_name 是数据库字段，你可以通过 /profile name 修改。'
     assert clean_identity_echo(text) == text

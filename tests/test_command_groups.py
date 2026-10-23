@@ -1,3 +1,5 @@
+import pytest
+
 from qqbot.commands import help_text
 from qqbot.config import ADMIN
 from test_web_chat import setup, client_for
@@ -40,9 +42,9 @@ async def test_grouped_prompt_profile_and_voice_through_web(setup):
         await send('/prompt upload')
         assert not (await send('/prompt cancel'))['prompt_pending']
         await send('/voice speaker noto')
-        media.command.assert_awaited_with(ADMIN, '/speaker noto')
+        media.command.assert_awaited_with(ADMIN, '/voice speaker noto')
         await send('/voice say 测试朗读')
-        media.command.assert_awaited_with(ADMIN, '/say 测试朗读')
+        media.command.assert_awaited_with(ADMIN, '/voice say 测试朗读')
         assert '网页暂不支持' in (await send('/profile avatar'))['reply']
     assert not service.store.history(ADMIN)
     service.llm.complete.assert_not_called()
@@ -55,3 +57,26 @@ def test_help_only_advertises_grouped_commands():
         assert old not in help
     assert '/prompt' not in help_text()
     assert '/task' not in help_text()
+
+@pytest.mark.parametrize('command', [
+    '/status', '/compress', '/reset', '/emotion', '/memory clear',
+    '/setprompt', '/setprompt cancel', '/setname bad', '/setnickname bad',
+    '/name bad', '/nickname bad', '/avatar', '/avatar cancel', '/speaker noto',
+    '/say 你好', '/tool 写文件', '/tool /task run 写文件', '/tools shell on',
+    '/remind in 5m 喝水', '/stop', '/帮助', '/状态', '/压缩', '/清空', '/情绪',
+    '/任务 run 写文件', '/提醒 in 5m 喝水', '/工具',
+])
+async def test_removed_commands_have_no_effect_in_web_or_shared_service(setup, command):
+    app, web, service, upload, media, bots = setup
+    service.store.append(ADMIN, '保留的对话', '保留的回复')
+    original = (service.store.prompt(), service.store.identity(), service.store.history(ADMIN))
+    async with client_for(app) as client:
+        client.headers['X-Debug-Token'] = web.token
+        result = (await client.post('/debug/chat', json={'text': command})).json()
+        assert '未知命令' in result['reply']
+        assert not result['prompt_pending']
+    assert (service.store.prompt(), service.store.identity(), service.store.history(ADMIN)) == original
+    assert upload.deadline('99990008') is None
+    assert not service.store.db.execute("SELECT 1 FROM settings WHERE key LIKE 'avatar_pending:%'").fetchone()
+    media.command.assert_not_called()
+    service.llm.complete.assert_not_called()

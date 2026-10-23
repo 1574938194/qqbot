@@ -40,7 +40,7 @@ async def test_sovits_request_and_voice_mode(tmp_path):
         return httpx.Response(200, content=audio(), headers={'content-type': 'audio/wav'})
     media.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
     try:
-        assert await media.command(ADMIN, '/say 你好') == audio()
+        assert await media.command(ADMIN, '/voice say 你好') == audio()
         assert media.voice_mode(ADMIN) == 'off'
         assert '测试克隆音色' in await media.command(ADMIN, '/voice')
     finally:

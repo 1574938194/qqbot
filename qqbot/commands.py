@@ -1,4 +1,4 @@
-"""QQ 与网页共用的命令分组；旧入口只作兼容，不出现在帮助里。"""
+"""QQ 与网页共用的英文分组命令与帮助。"""
 
 CHAT_HELP = '/chat status：模型、上下文、长期记忆与情感状态\n/chat compress：压缩旧对话\n/chat reset：清空自己的聊天和记忆\n/chat memory status|sync|clear：查看、同步或单独清除长期记忆'
 VOICE_HELP = '/voice on|off|both：语音、文字或两者\n/voice speaker [list|aoi|noto|hayami|edge|reset]：查看或切换音色\n/voice say 内容：单次朗读'
@@ -39,36 +39,7 @@ def help_text(*, admin=False, tasks=False, agent=False, section=''):
     return '\n'.join(lines)
 
 
-def normalize(text):
-    """只重写明确命令的路由，不改写普通文本、人设或任务正文。"""
+def parse(text):
+    """解析入口和参数；只归一化入口大小写，不改写正文。"""
     parts = text.strip().split(maxsplit=1)
-    if not parts or not parts[0].startswith('/'):
-        return text
-    command = parts[0].lower()
-    args = parts[1] if len(parts) > 1 else ''
-    sub = args.split(maxsplit=1)
-    action = sub[0].lower() if sub else ''
-    rest = sub[1] if len(sub) > 1 else ''
-    target = None
-    if command == '/chat':
-        if action in ('status', 'compress', 'reset', 'emotion') and rest:
-            return text  # 参数错误时只给用法，不能误清空历史。
-        target = {'': '/status', 'status': '/status', 'compress': '/compress',
-                  'reset': '/reset', 'emotion': '/emotion', 'memory': '/memory'}.get(action)
-    elif command == '/profile':
-        target = {'': '/setname', 'name': '/setname', 'nickname': '/setnickname', 'avatar': '/avatar'}.get(action)
-    elif command == '/voice' and action in ('speaker', 'say'):
-        target = '/' + action
-    elif command == '/prompt' and action in ('upload', 'cancel'):
-        target = '/setprompt'
-        if action == 'cancel':
-            rest = 'cancel' + (' ' + rest if rest else '')
-    elif command == '/task' and action == 'stop' and not rest:
-        target = '/stop'
-    elif command == '/task' and action in ('remind', 'tools', 'shell'):
-        target = '/remind' if action == 'remind' else '/tools'
-        if action == 'shell':
-            rest = 'shell ' + rest
-    if target:
-        return target + (' ' + rest if rest else '')
-    return text
+    return (parts[0].lower(), parts[1] if len(parts) > 1 else '') if parts else ('', '')

@@ -34,9 +34,9 @@ def setup(tmp_path):
 
 async def test_permissions_commands_and_exact_multiline_text(setup):
     receiver, store, bot, clock = setup
-    assert '超级管理员' in await receiver.message(bot, event('/setprompt', uid=123))
-    assert await receiver.message(bot, event('/setprompt', group=True)) is None
-    assert '5分钟' in await receiver.message(bot, event('/setprompt'))
+    assert '超级管理员' in await receiver.message(bot, event('/prompt upload', uid=123))
+    assert await receiver.message(bot, event('/prompt upload', group=True)) is None
+    assert '5分钟' in await receiver.message(bot, event('/prompt upload'))
     assert await receiver.message(bot, event('unauthorized', uid=123)) is None
     assert await receiver.message(bot, event('/help')) is None
     content = '  新人设\r\n第二行\n  '
@@ -50,25 +50,25 @@ async def test_permissions_commands_and_exact_multiline_text(setup):
 
 async def test_restart_expiry_cancel_and_per_bot_scope(setup):
     receiver, store, bot, clock = setup
-    await receiver.message(bot, event('/setprompt'))
+    await receiver.message(bot, event('/prompt upload'))
     receiver = PromptUpload(store, 260000, clock=lambda: clock[0])
     other = SimpleNamespace(self_id='88888')
     assert await receiver.message(other, event('不属于此机器人')) is None
     clock[0] += 300
     assert await receiver.message(bot, event('已过期')) is None
     assert receiver.deadline(bot.self_id) is None and store.prompt() == '旧人设'
-    await receiver.message(bot, event('/setprompt'))
-    assert '已取消' in await receiver.message(bot, event('/setprompt cancel'))
+    await receiver.message(bot, event('/prompt upload'))
+    assert '已取消' in await receiver.message(bot, event('/prompt cancel'))
     assert await receiver.message(bot, event('取消后')) is None
 
 
 async def test_file_message_and_offline_notice(setup):
     receiver, store, bot, clock = setup
-    await receiver.message(bot, event('/setprompt'))
+    await receiver.message(bot, event('/prompt upload'))
     assert '已更新' in await receiver.message(bot, event(file={'name': '人物.MD', 'file_id': 'abc', 'size': 25}))
     bot.call_api.assert_awaited_once_with('get_private_file_url', file_id='abc')
     assert store.prompt() == 'new file\r\nsecond line\r\n'
-    await receiver.message(bot, event('/setprompt'))
+    await receiver.message(bot, event('/prompt upload'))
     notice = SimpleNamespace(notice_type='offline_file', user_id=ADMIN,
                              file={'name': 'prompt.txt', 'size': 25, 'url': 'https://file.qq.com/prompt'})
     assert '已更新' in await receiver.notice(bot, notice)
@@ -77,7 +77,7 @@ async def test_file_message_and_offline_notice(setup):
 
 async def test_failed_file_keeps_prompt_and_waiting_and_logs_no_content(setup, caplog):
     receiver, store, bot, clock = setup
-    await receiver.message(bot, event('/setprompt'))
+    await receiver.message(bot, event('/prompt upload'))
     for file in ({'name': 'bad.exe'}, {'name': 'big.txt', 'size': MAX_BYTES + 1}):
         assert '原人设已保留' in await receiver.message(bot, event(file=file))
     assert not bot.call_api.await_count and not receiver.download.await_count
@@ -93,7 +93,7 @@ async def test_failed_file_keeps_prompt_and_waiting_and_logs_no_content(setup, c
 
 async def test_only_first_concurrent_file_consumes_waiting(setup):
     receiver, store, bot, clock = setup
-    await receiver.message(bot, event('/setprompt'))
+    await receiver.message(bot, event('/prompt upload'))
     first = event(file={'name': 'first.md', 'url': 'https://file.qq.com/first'})
     second = event(file={'name': 'second.txt', 'url': 'https://file.qq.com/second'})
     replies = await asyncio.gather(receiver.message(bot, first), receiver.message(bot, second))

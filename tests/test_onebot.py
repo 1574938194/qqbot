@@ -212,6 +212,13 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {}, 'echo': action['echo']}))
                 assert await receive_segment() == '机器人头像已更新。'
                 assert len(calls) == 1  # 资料更新不调用模型
+                for old in ('/setname bad', '/avatar', '/setprompt', '/tool 写文件', '/status', '/say 你好', '/帮助'):
+                    await ws.send(event(ADMIN, old))
+                    rejected = ''
+                    while not rejected.endswith('可用命令。'):
+                        rejected += await receive_segment()
+                    assert rejected == '未知命令，请使用 /help 查看可用命令。'
+                assert len(calls) == 1
                 image_path = tmp_path / 'blue.png'
                 Image.new('RGB', (50, 50), 'blue').save(image_path)
                 await ws.send(event(ADMIN, '看看这张图', image=True))
@@ -235,13 +242,13 @@ async def test_reverse_websocket(tmp_path):
                     acknowledgment = ''
                     while not acknowledgment.endswith('试听。'):
                         acknowledgment += await receive_segment()
-                    await ws.send(event(ADMIN, '/say 你好小爱'))
+                    await ws.send(event(ADMIN, '/voice say 你好小爱'))
                     action = json.loads(await asyncio.wait_for(ws.recv(), 35))
                     assert action['action'] == 'send_private_msg'
                     assert action['params']['message'][0]['type'] == 'record'
                     assert action['params']['message'][0]['data']['file'].startswith('base64://')
                     await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 4}, 'echo': action['echo']}))
-                    assert len(calls) == 3  # /say 不调用模型
+                    assert len(calls) == 3  # /voice say 不调用模型
                     assert speech_calls[-1] == {'text': '你好小爱', 'speaker': speaker}
                 await ws.send(event(ADMIN, '/voice speaker noto'))
                 acknowledgment = ''
@@ -256,7 +263,7 @@ async def test_reverse_websocket(tmp_path):
                 await ws.send(json.dumps({'status': 'ok', 'retcode': 0, 'data': {'message_id': 5}, 'echo': action['echo']}))
                 assert len(calls) == 4
                 assert speech_calls[-1] == {'text': '[CQ:at,qq=123]最终正文' * 3, 'speaker': 'noto'}
-                await ws.send(event(ADMIN, '/tool 显式工具测试'))
+                await ws.send(event(ADMIN, '/task run 显式工具测试'))
                 tool_reply = ''
                 while not tool_reply.endswith('启用。'):
                     tool_reply += await receive_segment()
@@ -311,7 +318,7 @@ async def test_reverse_websocket(tmp_path):
                 state = (await client.get('/debug/state')).json()
                 assert state['history'][-1][0] == '网页链路测试秘密'
                 assert len(state['history']) == history_count + 1
-                await client.post('/debug/chat', json={'text': '/status'})
+                await client.post('/debug/chat', json={'text': '/chat status'})
                 assert len(calls) == 5
                 assert len((await client.get('/debug/state')).json()['history']) == history_count + 1
                 picture = io.BytesIO()
